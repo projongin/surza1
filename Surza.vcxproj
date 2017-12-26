@@ -43,17 +43,17 @@
     <OutDir>.\Debug\</OutDir>
     <IntDir>.\Debug_surza\</IntDir>
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>C:\RTOS32\Include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\RTOS32\Libmsvc;$(LibraryPath)</LibraryPath>
-    <ExecutablePath>C:\RTOS32\Bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>$(RTTarget)\Include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(RTTarget)\Libmsvc;$(LibraryPath)</LibraryPath>
+    <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>.\Release\</OutDir>
     <IntDir>.\Release_surza\</IntDir>
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>C:\RTOS32\Include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\RTOS32\Libmsvc;$(LibraryPath)</LibraryPath>
-    <ExecutablePath>C:\RTOS32\Bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>$(RTTarget)\Include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(RTTarget)\Libmsvc;$(LibraryPath)</LibraryPath>
+    <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

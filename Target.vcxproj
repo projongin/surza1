@@ -54,18 +54,18 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <OutDir>.\Debug\</OutDir>
     <IntDir>.\Debug_target\</IntDir>
-    <ExecutablePath>C:\RTOS32\Bin;$(ExecutablePath)</ExecutablePath>
-    <IncludePath>C:\RTOS32\Include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\RTOS32\Libmsvc;$(LibraryPath)</LibraryPath>
+    <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>$(RTTarget)\Include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(RTTarget)\Libmsvc;$(LibraryPath)</LibraryPath>
     <TargetName>Surza</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>.\Release\</OutDir>
     <IntDir>.\Release_target\</IntDir>
-    <IncludePath>C:\RTOS32\Include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\RTOS32\Libmsvc;$(LibraryPath)</LibraryPath>
-    <ExecutablePath>C:\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin;C:\RTOS32\Bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>$(RTTarget)\Include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(RTTarget)\Libmsvc;$(LibraryPath)</LibraryPath>
+    <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Midl>
