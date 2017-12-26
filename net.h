@@ -1,0 +1,107 @@
+#pragma once
+
+#include <Rtk32.h>
+
+#include <stddef.h>
+#include <stdint.h>
+
+
+#define _NET_DEBUG_PRINT
+
+//--- принудительное отключение отладочной распечатки при глобальном запрете
+#ifndef ALLOW_DEBUG_PRINT
+#ifdef NET_DEBUG_PRINT
+#undef NET_DEBUG_PRINT
+#endif
+#endif
+
+
+
+//максимально возможное число одновременных подключений
+#define  NET_MAX_CONNECTIONS_ALLOWED  5
+
+
+
+//приоритет потока TCP сервера
+#define NET_TCP_SERVER_PRIORITY    (RTKConfig.MainPriority+1)
+
+//приоритет записывающего потока
+#define NET_TCP_WRITER_PRIORITY    (RTKConfig.MainPriority+3)
+
+//приоритет читающего потока
+#define NET_TCP_READER_PRIORITY    (RTKConfig.MainPriority+2)
+
+
+//номер канала для отправки всем подключенным клиентам
+#define NET_BROADCAST_CHANNEL      UINT64_MAX
+
+
+
+typedef enum {
+	NET_ERR_NO_ERROR = 0,      //нет ошибок
+	NET_ERR_ANY,               //любая, неопределенная ошибка (когда код ошибки не важен)
+	NET_ERR_QUEUE_OVERFLOW,    //переполнение очереди сообщений
+	NET_ERR_MEM_ALLOC          //ошибка выделения памяти
+}  net_err_t;
+
+typedef enum {
+	NET_PRIORITY_BACKGROUND = 0,
+	NET_PRIORITY_LOWEST,
+	NET_PRIORITY_LOW,
+	NET_PRIORITY_MEDIUM,
+	NET_PRIORITY_HIGH,
+	NET_PRIORITY_HIGHEST
+} net_msg_priority_t;
+
+
+#pragma pack(push)
+#pragma pack(1) 
+typedef struct {
+	uint8_t  type;           //типа сообщения
+	uint8_t  subtype;        //подтип
+	size_t   size;           //длина данных
+	uint8_t  data[];         //данные сообщения
+} net_msg_t;
+#pragma pack(pop)
+
+
+
+typedef void(*net_msg_dispatcher)(net_msg_t* msg, unsigned channel);
+
+
+
+//инициализация контроллера и создание tcp сервера
+net_err_t net_init(net_msg_dispatcher);
+
+
+//разрешение получения сообщений
+void net_start(void);
+//запрет получения сообщений
+void net_stop(void);
+
+
+//возвращает количество подключенных клиентов, <0 если нет соединений
+volatile unsigned net_connections();
+
+
+//получение нового буфера под сообщение с длиной данных len
+net_msg_t* net_get_msg_buf(size_t len);
+
+//возврат буфера
+void net_free_msg_buf(net_msg_t* buf);
+
+//посылка нового сообщения
+net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned channel);
+
+//периодическая функция обработки
+net_err_t net_update(void);
+
+
+
+
+
+
+
+
+
+

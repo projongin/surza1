@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Config Files">
+      <UniqueIdentifier>{8159e2e7-b87b-4dd8-85d9-6a5930b552c8}</UniqueIdentifier>
+      <Extensions>cfg</Extensions>
+    </Filter>
+    <Filter Include="Boot Diskettes">
+      <UniqueIdentifier>{2174a73e-a8b2-4223-82ec-9a517ba0a1a5}</UniqueIdentifier>
+      <Extensions>rtb</Extensions>
+    </Filter>
+    <Filter Include="LOC Files Debug">
+      <UniqueIdentifier>{6a4332eb-4fb7-48df-a162-e66a84e6cb78}</UniqueIdentifier>
+      <Extensions>loc</Extensions>
+    </Filter>
+    <Filter Include="LOC Files Release">
+      <UniqueIdentifier>{9827e7a8-dc0f-4d5d-b523-1873fd01b15c}</UniqueIdentifier>
+      <Extensions>loc</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="Demopc.cfg">
+      <Filter>Config Files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Monitor.cfg">
+      <Filter>Config Files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Surza.cfg">
+      <Filter>Config Files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Debug\Monitor.rtb">
+      <Filter>Boot Diskettes</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Release\Surza.rtb">
+      <Filter>Boot Diskettes</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Debug\Monitor.loc">
+      <Filter>LOC Files Debug</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Debug\Surza.loc">
+      <Filter>LOC Files Debug</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Release\Surza.loc">
+      <Filter>LOC Files Release</Filter>
+    </CustomBuild>
+  </ItemGroup>
+</Project>
