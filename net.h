@@ -87,6 +87,9 @@ volatile unsigned net_connections();
 //получение нового буфера под сообщение с длиной данных len
 net_msg_t* net_get_msg_buf(size_t len);
 
+//получить максимально возможный размер данных для сохранения в сообщении
+size_t net_msg_buf_get_available_space(const net_msg_t* buf);
+
 //возврат буфера
 void net_free_msg_buf(net_msg_t* buf);
 

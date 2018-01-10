@@ -127,10 +127,110 @@ static const net_settings_t net_settings_default = {
 
 
 
-//масимальное количество сообщений  в очереди на отправку и получение для каждого потока
+//максимальное количество сообщений  в очереди на отправку и получение для каждого потока
 #define NET_THREAD_QUEUE_LENGTH   1000
 
+//максимальное количество сообщений в общих очередях на отправку и получение
+#define NET_MAIN_QUEUE_LENGTH     (NET_THREAD_QUEUE_LENGTH*NET_MAX_CONNECTIONS_ALLOWED)
 
+
+
+
+
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------
+// очереди приема и отправки
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+typedef enum {
+	NET_MAIN_QUEUE_SEND = 0,
+	NET_MAIN_QUEUE_RECV
+}  net_main_queue_type_t;
+
+typedef struct net_queue_node_tt {
+	struct net_queue_node_tt* next;
+	void *ptr;
+} net_queue_node_t;
+
+#define NET_QUEUE_PRIORITY_NUM  (NET_PRIORITY_HIGHEST+1)     //количество приоритетов
+#define NET_MAIN_QUEUE_NUM      (NET_MAIN_QUEUE_RECV+1)      //количество общих очередей
+
+
+net_queue_node_t* priority_queue_head[NET_MAIN_QUEUE_NUM][NET_QUEUE_PRIORITY_NUM];
+net_queue_node_t* priority_queue_tail[NET_MAIN_QUEUE_NUM][NET_QUEUE_PRIORITY_NUM];
+
+#define NET_NODE_STACK_SIZE  NET_MAIN_QUEUE_LENGTH
+net_queue_node_t  net_queue_nodes[NET_MAIN_QUEUE_NUM][NET_NODE_STACK_SIZE];
+net_queue_node_t* net_queue_node_stack[NET_MAIN_QUEUE_NUM][NET_NODE_STACK_SIZE];
+int net_queue_node_stack_ptr[NET_MAIN_QUEUE_NUM];
+
+
+void net_main_queue_init() {
+	for (int j = 0; j < NET_MAIN_QUEUE_NUM; j++) {
+		for (int i = 0; i < NET_QUEUE_PRIORITY_NUM; i++) {
+			priority_queue_head[j][i] = NULL;
+			priority_queue_tail[j][i] = NULL;
+		}
+		net_queue_node_stack_ptr[j] = NET_NODE_STACK_SIZE;
+		for (int i = 0; i < NET_NODE_STACK_SIZE; i++)
+			net_queue_node_stack[j][i] = &net_queue_nodes[j][i];
+	}
+}
+
+bool net_main_queue_is_full(net_main_queue_type_t queue) {
+	return net_queue_node_stack_ptr[queue] == 0 ? true : false;
+}
+
+int net_add_to_main_queue(net_main_queue_type_t queue, net_msg_priority_t priority, void* ptr) {
+	if (net_main_queue_is_full(queue))
+		return -1;
+	
+	net_queue_node_t* node = net_queue_node_stack[queue][--net_queue_node_stack_ptr[queue]];
+	node->next = NULL;
+	node->ptr = ptr;
+
+	if (priority_queue_tail[queue][priority] != NULL) {
+		priority_queue_tail[queue][priority]->next = node;
+		priority_queue_tail[queue][priority] = node;
+	}else
+		priority_queue_tail[queue][priority] = node;
+
+	if (priority_queue_head[queue][priority] == NULL)
+		priority_queue_head[queue][priority] = node;
+
+	return 0;
+}
+
+void* net_remove_from_main_queue(net_main_queue_type_t queue, net_msg_priority_t priority) {
+
+	net_queue_node_t* node = priority_queue_head[queue][priority];
+
+	if (node) {
+		priority_queue_head[queue][priority] = node->next;
+		if (priority_queue_head[queue][priority] == NULL)
+			priority_queue_tail[queue][priority] = NULL;
+		
+		net_queue_node_stack[queue][net_queue_node_stack_ptr[queue]] = node;
+		net_queue_node_stack_ptr[queue]++;
+	}
+
+	return node?node->ptr:NULL;
+}
+
+void* net_remove_from_main_queue_by_priority(net_main_queue_type_t queue) {
+	void* ptr=NULL;
+
+	for (int pr = NET_QUEUE_PRIORITY_NUM - 1; pr >= 0; pr--) {
+		ptr = net_remove_from_main_queue(queue, pr);
+		if (ptr) return ptr;
+	}
+
+	return NULL;
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//мютекс доступа к общей очереди отправки
+RTKSemaphore send_queue_mutex;
 
 
 
@@ -297,8 +397,8 @@ net_err_t net_init(net_msg_dispatcher dispatcher) {
 		conn_data->sock = INVALID_SOCKET;
 		conn_data->thread_cnt_atomic=0;
 		
-		conn_data->read_mailbox = RTKCreateMailbox(sizeof(net_msg_t*), NET_THREAD_QUEUE_LENGTH, net_thread_mailbox_name);
-		conn_data->write_mailbox = RTKCreateMailbox(sizeof(net_msg_t*), NET_THREAD_QUEUE_LENGTH, net_thread_mailbox_name);
+		conn_data->read_mailbox = RTKCreateMailbox(sizeof(net_buf_t*), NET_THREAD_QUEUE_LENGTH, net_thread_mailbox_name);
+		conn_data->write_mailbox = RTKCreateMailbox(sizeof(net_buf_t*), NET_THREAD_QUEUE_LENGTH, net_thread_mailbox_name);
 
 		conn_data->read_missed_counter = 0;
 		conn_data->write_missed_counter=0;
@@ -309,11 +409,16 @@ net_err_t net_init(net_msg_dispatcher dispatcher) {
 		conn_data->label = rand();
 
 	}
+	 
 
 
 
+	//создание общих очередей для входных и выходных сообщений, а также указателей на сообщения определенных приоритетов
+	net_main_queue_init();
 
-	//создание общих очередей для входных и выходных сообщений, а также указателей на сообщения опредленных приоритетов
+	send_queue_mutex = RTKOpenSemaphore(ST_MUTEX, 1, SF_COPY_NAME, "net_send_queue_mutex");
+
+
 
 
 	if (false) {
@@ -361,11 +466,26 @@ volatile unsigned net_connections() {
 	return c;
 }
 
+
+//--------------------------------------------------------------------------
+
+//получение нового буфера
+net_buf_t* net_get_net_buf(size_t len) { return NULL; }
+
+//возврат буфера
+void net_free_net_buf(net_buf_t* buf) {}
+
+
 //получение нового буфера под сообщение с длиной данных len
 net_msg_t* net_get_msg_buf(size_t len) { return NULL; }
 
 //возврат буфера
 void net_free_msg_buf(net_msg_t* buf) {}
+
+//получить максимально возможный размер данных для сохранения в сообщении
+size_t net_msg_buf_get_available_space(const net_msg_t* buf) { return 0; };
+
+//---------------------------------------------------------------------------
 
 //посылка нового сообщения
 net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned channel) {
@@ -591,59 +711,106 @@ void net_connection_control_func() {
 				net_thread_state_t *data = &net_thread_state[i];
 				if (atom_get_state(&data->thread_cnt_atomic) == 0) {
 					// все мютексы должны быть свободны к данному моменту. их не использую
-					// очищаю очередь приема
-
-#if 0
-					assert(data->read_stack_ptr <= data->read_stack_size);
-					while (data->read_stack_ptr) {
-						data->read_stack_ptr--;
-						// добавить сообщение в общую очередь приема
-						net_add_to_queue_in( (*data->read_stack)[data->read_stack_ptr] );
-
-
-
-					}
-
-#endif
-
+					// очищаю очередь приема канала
+					RTKBool res;
+					net_buf_t* net_buf;
+					do {
+						net_buf = NULL;
+						res = RTKGetCond(data->read_mailbox, &net_buf);
+						if (res && net_buf) {
+							// добавить сообщение в общую очередь приема
+							if (net_add_to_main_queue(NET_MAIN_QUEUE_RECV, (net_buf->net_msg.priority < NET_QUEUE_PRIORITY_NUM ? net_buf->net_msg.priority : NET_PRIORITY_BACKGROUND), net_buf) < 0)
+								net_free_net_buf(net_buf);
+						}
+					} while (res == TRUE);
 
 					// очищаю очередь на передачу
+					do {
+						net_buf = NULL;
+						res = RTKGetCond(data->write_mailbox, &net_buf);
+						if (res && net_buf) {
+							net_free_net_buf(net_buf);
+						}
+					} while (res == TRUE);
 
 					// закрываю сокет
+					closesocket(data->sock);
+					data->sock = INVALID_SOCKET;
 
 				}
 
 				break;
 			}
 
+}
+
+void net_read_recv_queues() {
+
+	for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
+		if (net_thread_state[i].sock != INVALID_SOCKET) {
+			net_thread_state_t *data = &net_thread_state[i];
+
+			RTKBool res;
+			net_buf_t* net_buf;
+			do {
+				if (net_main_queue_is_full(NET_MAIN_QUEUE_RECV)) break;
+				net_buf = NULL;
+				res = RTKGetCond(data->read_mailbox, &net_buf);
+				if (res && net_buf) {
+					// добавить сообщение в общую очередь приема
+					if (net_add_to_main_queue(NET_MAIN_QUEUE_RECV, (net_buf->net_msg.priority < NET_QUEUE_PRIORITY_NUM ? net_buf->net_msg.priority : NET_PRIORITY_BACKGROUND), net_buf) < 0) {
+						net_free_net_buf(net_buf);
+						data->read_missed_counter++;
+					}		
+				}
+			} while (res == TRUE);
+
+		}
 
 }
 
+void net_write_send_queues() {
 
+	net_buf_t* net_buf = NULL;
 
-enum NET_MAIN_STATES { NET_MAIN_STATE_NO_SERVER=0, NET_MAIN_STATE_NO_CONNECTION };
+	do {
+
+		RTKWait(send_queue_mutex);
+
+		  net_buf = net_remove_from_main_queue_by_priority(NET_MAIN_QUEUE_SEND);
+
+		  if (net_buf) {
+			  ....
+		  }
+
+		RTKSignal(send_queue_mutex);
+
+	} while (net_buf);
+	
+
+}
+
+void net_dispatch_msgs() {
+	//сохранить указатель на сообщение, передаваемый в обработчик, чтоб блокировать его удаление из обработчика вызовом функции net_free_msg_buf,
+	// а также при добавлении этого буфера на отправление в функции  net_send_msg
+	//удаляю буфер после завершения обработчика, если в нем буфер не был передан в net_send_msg
+}
+
 
 //периодическая функция обработки
 net_err_t net_update() {
-
-	static int state = 0;
-
-
 
 	//проверить состояние всех потоков
 	net_connection_control_func();
 
 	//прочитать все текущие сообщения из входных очередей и записать в общую очередь приема согласно приоритетам
-
-
+	net_read_recv_queues();
+	
 	//разобрать общую очередь на передачу и переместить в индивидуальные очереди на отправку для каждого канала согласно приоритетам
-
+	net_write_send_queues();
 
 	//вызвать обработчики для всех сообщений в общей очереди приема
-	     //сохранить указатель на сообщение, передаваемый в обработчик, чтоб блокировать его удаление из обработчика вызовом функции net_free_msg_buf,
-	     // а также при добавлении этого буфера на отправление в функции  net_send_msg
-	     //удаляю буфер после завершения обработчика, если в нем буфер не был передан в net_send_msg
-
+	net_dispatch_msgs();
 
 
 	return NET_ERR_NO_ERROR;
