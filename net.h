@@ -41,7 +41,8 @@ typedef enum {
 	NET_ERR_NO_ERROR = 0,      //нет ошибок
 	NET_ERR_ANY,               //любая, неопределенная ошибка (когда код ошибки не важен)
 	NET_ERR_QUEUE_OVERFLOW,    //переполнение очереди сообщений
-	NET_ERR_MEM_ALLOC          //ошибка выделения памяти
+	NET_ERR_MEM_ALLOC,         //ошибка выделения памяти
+	NET_ERR_NO_CONNECTIONS,    //нет активных соединений
 }  net_err_t;
 
 typedef enum {
@@ -66,18 +67,21 @@ typedef struct {
 
 
 
-typedef void(*net_msg_dispatcher)(net_msg_t* msg, unsigned channel);
+typedef void(*net_msg_dispatcher)(net_msg_t* msg, uint64_t channel);
 
 
 
 //инициализация контроллера и создание tcp сервера
-net_err_t net_init(net_msg_dispatcher);
+net_err_t net_init(net_msg_dispatcher default_dispatcher);
 
 
 //разрешение получения сообщений
 void net_start(void);
 //запрет получения сообщений
 void net_stop(void);
+
+//добавление обработчика сообщений определенного типа
+void net_add_dispatcher(uint8_t type, net_msg_dispatcher dispatcher);
 
 
 //возвращает количество подключенных клиентов, <0 если нет соединений

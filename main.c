@@ -4,6 +4,7 @@
 
 #include <time.h>
 #include <limits.h>
+#include <stdint.h>
 
 #include <Rtkflt.h>
 
@@ -52,7 +53,7 @@ DWORD _fastcall disable_smi(void *p)
 //void* mem_table[65536];
 
 //------------------
-void tmp_net_callback(net_msg_t* msg, unsigned channel) {}
+void tmp_net_callback(net_msg_t* msg, uint64_t channel) {}
 //------------------
 
 
