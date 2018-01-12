@@ -13,6 +13,7 @@
 
 
 #include "net.h"
+#include "buf_pool.h"
 
 #include "common.h"
 #include "log.h"
@@ -44,7 +45,8 @@
 
 	Функция добавления сообщений добавляет сообщения на отправку в общую очередь согласно приоритетам
 
-	Функция получения буфера должна вызываться под каждое отправляемое сообщение. Самостоятельно определяет тип буфера под разный размер сообщений (пул буферов или память из кучи)
+	Функция получения буфера должна вызываться под каждое отправляемое сообщение (кроме случая использования буфера полученного сообщения в обработчике сообщений.
+	   Самостоятельно определяет тип буфера под разный размер сообщений (пул буферов или память из кучи).
 	   Исключение - когда сообщение отправляется в обработчике принятого сообщения и текущий буфер подходит по размерам.
 
 
@@ -80,6 +82,7 @@ typedef struct {
 //структура буфера для хранения сообщений
 typedef struct {
 	enum net_buf_type buf_type;   //тип буфера - из пула или выделенный из кучи
+	uint32_t          buf_size;   //размер буфера
 	uint64_t          channel;    //канал(номер клиента) отправки,  NET_BROADCAST_CHANNEL  - отправка всем подключенным, формируется на основе ip адреса и порта подключенного клиента
 	net_raw_msg_t     net_msg;
 } net_buf_t;
@@ -88,10 +91,164 @@ typedef struct {
 
 
 
+
+
+
+//максимальное количество сообщений  в очереди на отправку и получение для каждого потока
+#define NET_THREAD_QUEUE_LENGTH   1000
+
+//максимальное количество сообщений в общих очередях на отправку и получение
+#define NET_MAIN_QUEUE_LENGTH     (NET_THREAD_QUEUE_LENGTH*NET_MAX_CONNECTIONS_ALLOWED)
+
+
+
+
+
 #define NET_MSG_OFFSET         (offsetof(net_raw_msg_t, msg_data))
 #define NET_RAW_MSG_OFFSET     (offsetof(net_buf_t, net_msg))
 
 #define NET_BUF_TO_MSG_OFFSET  (NET_RAW_MSG_OFFSET + NET_RAW_MSG_OFFSET)
+
+#define NET_BUF_OVERHEAD       (NET_BUF_TO_MSG_OFFSET + sizeof(net_msg_t) + 4)
+
+
+#define NET_MAX_RAW_MSG_LENGTH   (NET_MAX_MSG_DATA_LENGTH + sizeof(net_msg_t) + 4)
+#define NET_MAX_NET_BUF_SIZE     (NET_MAX_MSG_DATA_LENGTH + NET_BUF_OVERHEAD)
+
+
+#define NET_BUF_SIZE           4096                          //размер буферов  в пуле буферов
+#define NET_BUF_POOL_SIZE      (NET_MAIN_QUEUE_LENGTH*5)     //размер пула буферов
+
+
+
+
+//--------------------------------------------------------------------------
+// работа с буферами
+//--------------------------------------------------------------------------
+
+static int net_buf_pool;
+
+static net_msg_t* save_callback_buf = NULL;
+
+
+//иницализация
+bool net_buf_pool_init() {
+	
+	net_buf_pool = buf_pool_add_pool(NET_BUF_SIZE, NET_BUF_POOL_SIZE);
+	if (net_buf_pool < 0)
+		return false;
+
+	return true;
+}
+
+
+
+//получение нового буфера
+net_buf_t* net_get_net_buf(size_t len) {
+
+	net_buf_t* buf;
+
+	if (len <= NET_BUF_SIZE) {
+		//получаем новый буфер из пула
+		buf = buf_pool_get(net_buf_pool);
+		if (buf == NULL)
+			return NULL;
+
+		buf->buf_type = NET_BUF_TYPE_POOL;
+		buf->buf_size = NET_BUF_SIZE;
+	}
+	else {
+		//делаем новый буфер в куче
+		
+		buf = malloc(len);
+		if (buf == NULL)
+			return NULL;
+
+		buf->buf_type = NET_BUF_TYPE_HEAP;
+		buf->buf_size = len;
+	}
+
+	return buf;
+}
+
+
+//возврат буфера
+void net_free_net_buf(net_buf_t* buf) {
+
+	if (buf == NULL) return;
+
+	if (buf->buf_type == NET_BUF_TYPE_POOL) {
+		buf_pool_free(net_buf_pool, buf);
+	}
+	else if (buf->buf_type == NET_BUF_TYPE_HEAP) {
+		free(buf);
+	}
+	
+}
+
+//получение нового буфера и инициализация копией buf,  возвращает  NULL при неудаче выделения нового буфера
+net_buf_t* net_copy_net_buf(const net_buf_t* buf) {
+
+	if (buf == NULL)
+		return NULL;
+
+	net_buf_t* buf_copy = net_get_net_buf(buf->buf_size);
+
+	if (buf_copy != NULL)
+		memcpy(buf_copy, buf, buf->buf_size);
+
+	return buf_copy;
+}
+
+
+
+//получение net_buf_t* из net_msg_t*
+net_buf_t* net_get_net_buf_from_msg(const net_msg_t* ptr) {
+	return ptr==NULL?NULL:((net_buf_t*)((uint8_t*)ptr-NET_BUF_TO_MSG_OFFSET));
+}
+
+//получение нового буфера под сообщение с длиной данных len
+net_msg_t* net_get_msg_buf(size_t len) {
+	
+	net_buf_t* buf = net_get_net_buf(NET_BUF_OVERHEAD + len);
+	if (buf == NULL)
+		return NULL;
+
+	net_msg_t* msg = (net_msg_t*)(buf->net_msg.msg_data);
+
+	msg->size = len;
+	
+	return msg;
+}
+
+//возврат буфера
+void net_free_msg_buf(net_msg_t* buf) {
+
+	if (buf == NULL)
+		return;
+
+	if (save_callback_buf == buf)
+		save_callback_buf = NULL;
+
+	net_free_net_buf(net_get_net_buf_from_msg(buf));
+}
+
+//получить максимально возможный размер данных для сохранения в сообщении
+size_t net_msg_buf_get_available_space(const net_msg_t* buf) {
+
+	if (buf == NULL)
+		return 0;
+
+	net_buf_t* net_buf = net_get_net_buf_from_msg(buf);
+
+	return net_buf->buf_size - NET_BUF_OVERHEAD;
+};
+
+
+//---------------------------------------------------------------------------
+
+
+
 
 
 
@@ -138,17 +295,6 @@ bool net_load_settings() {
 
 
 
-
-//максимальное количество сообщений  в очереди на отправку и получение для каждого потока
-#define NET_THREAD_QUEUE_LENGTH   1000
-
-//максимальное количество сообщений в общих очередях на отправку и получение
-#define NET_MAIN_QUEUE_LENGTH     (NET_THREAD_QUEUE_LENGTH*NET_MAX_CONNECTIONS_ALLOWED)
-
-
-
-
-
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 // очереди приема и отправки
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -179,6 +325,7 @@ static int net_queue_node_stack_ptr[NET_MAIN_QUEUE_NUM];
 //пропускать сообщения при выборке из очереди 
 static uint64_t net_skip_type[NET_MAIN_QUEUE_NUM][NET_MAX_CONNECTIONS_ALLOWED];
 static int net_skip_type_num[NET_MAIN_QUEUE_NUM];
+
 
 
 void net_main_queue_init() {
@@ -298,16 +445,6 @@ void net_main_queue_skip_reset(net_main_queue_type_t queue) {
 
 
 
-//мютекс доступа к общей очереди отправки
-RTKSemaphore send_queue_mutex;
-
-
-
-//получение нового буфера под сообщение с размером данных len
-static net_buf_t* net_get_buf(size_t len) { return NULL; }
-
-//возврат буфера в пул или деаллокация
-static void net_free_buf(net_buf_t* buf) {};
 
 
 
@@ -326,18 +463,17 @@ static void net_free_buf(net_buf_t* buf) {};
 static int interface = SOCKET_ERROR;
 
 
+//сокет tcp сервера 
+static SOCKET server_sock; 
 
-static SOCKET server_sock;
+//обработчик сообщений по-умолчанию
+static net_msg_dispatcher default_callback = 0;  
 
-static net_msg_dispatcher default_callback = 0;
-
-
-
+//разрешение вызова обработчиков
 volatile static int callback_en = 0;
 
-static net_msg_t* save_callback_buf = NULL;
-
-static net_msg_dispatcher net_callbacks[UINT8_MAX + 1];
+//индивидуальные обработчики сообщений для каждого типа
+static net_msg_dispatcher net_callbacks[UINT8_MAX + 1];  
 
 
 
@@ -368,6 +504,10 @@ static char net_writer_thread_name[] = "net_writer_thread";
 static RTKTaskHandle net_tcp_server_handler = NULL;
 
 
+
+
+//мютекс доступа к общей очереди отправки
+RTKSemaphore send_queue_mutex;
 
 
 
@@ -459,7 +599,10 @@ net_err_t net_init(net_msg_dispatcher dispatcher) {
 
 
 	//создание пула буферов
-	
+	if (!net_buf_pool_init()) {
+		LOG_AND_SCREEN("net_init(): buf_pool_init() failed");
+		goto err;
+	}
 
 
 	//инициализация мютексов, очередей и т.п.
@@ -489,16 +632,6 @@ net_err_t net_init(net_msg_dispatcher dispatcher) {
 	net_main_queue_init();
 
 	send_queue_mutex = RTKOpenSemaphore(ST_MUTEX, 1, SF_COPY_NAME, "net_send_queue_mutex");
-
-
-
-
-	if (false) {
-		LOG_AND_SCREEN("net_init(): memory allocation failed");
-		return NET_ERR_MEM_ALLOC;
-	}
-
-
 
 
 	
@@ -544,50 +677,6 @@ volatile unsigned net_connections() {
 	
 	return c;
 }
-
-
-//--------------------------------------------------------------------------
-// работа с буферами
-//--------------------------------------------------------------------------
-
-//получение нового буфера
-net_buf_t* net_get_net_buf(size_t len) { return NULL; }
-
-//получение нового буфера и инициализация копией buf,  возвращает  NULL при неудачи выделения нового буфера
-net_buf_t* net_copy_net_buf(const net_buf_t* buf) {
-	return NULL;
-}
-
-//возврат буфера
-void net_free_net_buf(net_buf_t* buf) {}
-
-//получение net_buf_t* из net_msg_t*
-net_buf_t* net_get_net_buf_from_msg(const net_msg_t* ptr) {
-	return NULL;
-}
-
-//получение нового буфера под сообщение с длиной данных len
-net_msg_t* net_get_msg_buf(size_t len) { return NULL; }
-
-//возврат буфера
-void net_free_msg_buf(net_msg_t* buf) {
-	
-	if (save_callback_buf == buf)
-		save_callback_buf = NULL;
-
-
-
-	//..............
-
-}
-
-//получить максимально возможный размер данных для сохранения в сообщении
-size_t net_msg_buf_get_available_space(const net_msg_t* buf) { return 0; };
-
-
-//---------------------------------------------------------------------------
-
-
 
 
 
@@ -697,33 +786,221 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned cha
 
 
 
+// определение сработал ли таймаут  с учетом природы типа RTKTime в РТОС32 (пока так, потом можно поискать более красивые варианты)
+bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time) {
+	if (start >= 0) {
+		if (stop > 0) { 
+			// start>0, stop>0
+			if (time > stop)
+				return true;
+		}
+		else {
+			// start>0, stop<0
+			if (time<0 && time>stop)
+				return true;
+		}
+	}
+	else {
+		if (stop >= 0) {
+			// start<0, stop>0
+			if (time >= 0 && time > stop)
+				return true;
+		}
+		else {
+			// start<0, stop<0
+			if (time > stop)
+				return true;
+		}
+
+	}
+
+	return false;
+}
+
+
+enum net_reader_states_t {
+	NET_READER_STATE_GET_BUF = 0,
+	NET_READER_STATE_READ_SIZE,
+	NET_READER_STATE_READ_MSG,
+	NET_READER_STATE_CHECK_MSG,
+	NET_READER_STATE_SAVE_MSG
+};
+
+
+
 void net_reader_thread_func(void* params) {
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
 
+	
+	int state = 0;
+	net_buf_t* pool_buf=NULL;
+	net_buf_t* heap_buf=NULL;
+
+	net_buf_t* buf = NULL;
+
+
+	int ret;
+	
+	uint32_t msg_size;
+	uint8_t* data_ptr;
+	int bytes_left;
+
+	uint32_t buf_len;
+
+	RTKTime start_time;
+	RTKTime stop_time;
+
+	enum net_buf_type buf_type;
+
+	bool exit = false;
+
+
+	while (!exit) {
+		
+		switch (state) {
+
+		  case NET_READER_STATE_GET_BUF:   //получение буфера
+
+			       if (pool_buf==NULL) {
+					   net_get_net_buf(NET_BUF_SIZE);
+					   if (net_get_net_buf) 
+						   RTKDelay(CLKMilliSecsToTicks(200));
+				   }
+				   state = NET_READER_STATE_READ_SIZE;
+			        //если pool_buf==NULL, то получаю его
+			  break;
+
+		  case NET_READER_STATE_READ_SIZE:   //чтение общей длины сообщения
+			       
+			       ret = recv(data->sock, (PFCHAR)&msg_size, sizeof(msg_size), MSG_PEEK);
+				   if (ret == 0) break;  // сработал таймаут сокета, нет входящих сообщений
+				   if (ret == SOCKET_ERROR) {
+					   exit = true;
+					   break;
+				   }
+				   if (ret != sizeof(msg_size)) {
+					   //вторая попытка дочитать длину
+					   RTKDelay(CLKMilliSecsToTicks(10));
+					   ret = recv(data->sock, (PFCHAR)&msg_size, sizeof(msg_size), MSG_PEEK);
+					   if (ret != sizeof(msg_size)) {
+						   exit = true;
+						   break;
+					   }
+				   }
+
+				   buf_len = msg_size + NET_RAW_MSG_OFFSET;
+
+				   //если длина превышает максимально допустимую длину сообщения  - выходим
+				   if (buf_len > NET_MAX_NET_BUF_SIZE) {
+					   exit = true;
+					   break;
+				   }
+				   
+				   //выделение буфера из кучи, если длины буфера из пула недостаточна
+				   if (buf_len > NET_BUF_SIZE) {
+					   heap_buf = (net_buf_t*)malloc(buf_len);
+					   //при неудаче выделения буфера выходим
+					   if (heap_buf == NULL) {
+						   exit = true;
+						   break;
+					   }
+					   buf = heap_buf;
+				   } else buf = pool_buf;
+
+				   
+				   data_ptr = (uint8_t*)buf;
+				   data_ptr += NET_RAW_MSG_OFFSET;
+				   
+				   bytes_left=(int)msg_size;
+
+				   //таймаут на получение всего сообщения:   2000 миллисекунды безусловные + (длина сообщения/64) миллисекунд   (из расчета минимальной скорости 15 секунд на мегабайт )
+				   start_time = RTKGetTime();
+				   stop_time = start_time + CLKMilliSecsToTicks(2000 + (msg_size >> 6));
+
+
+				   state = NET_READER_STATE_READ_MSG;
+
+			  break;
+		  
+		  case NET_READER_STATE_READ_MSG:   //получение всего тела сообщения с таймаутом
+
+			       if (net_timeout_expired(start_time, stop_time, RTKGetTime())) { //проверка таймаута с учетом природы типа RTKTime
+				       //если сработал общий таймер на получение - выходим
+					   exit = true;
+					   break;
+				   }
+
+				   ret = recv(data->sock, data_ptr, bytes_left, 0);
+				   if (ret == SOCKET_ERROR) {
+					   exit = true;
+					   break;
+				   }
+				   if (ret<0 || ret> bytes_left) {
+					   exit = true;
+					   break;
+				   }
+				   if (ret == 0)  //таймаут сокета сработал
+					   break;
+				   
+				   data_ptr += ret;
+				   bytes_left -= ret;
+
+				   if (bytes_left == 0)
+					   state = NET_READER_STATE_CHECK_MSG;
+
+			  break;
+
+		  case NET_READER_STATE_CHECK_MSG:   //проверка сообщения
+
+			        //если не проходит проверку - выходим
+			       if (memcmp(&buf->net_msg.label, data_ptr-4, 4)) {
+					   exit = true;
+					   break;
+					}
+				   state = NET_READER_STATE_SAVE_MSG;
+
+			  break;
+
+		  case NET_READER_STATE_SAVE_MSG:   //добавляем сообщение в очередь с проверкой ее забитости
+
+			         buf_type = buf->buf_type;
+			  
+			         if (RTKPutCond(data->read_mailbox, buf) == FALSE) {
+						 RTKDelay(CLKMilliSecsToTicks(200));   //очередь забита, пробуем снова с задержкой
+						 break;
+					 }
+
+					 //сообщение успешно добавлено во входную очередь
+
+					 if (buf_type == NET_BUF_TYPE_POOL)
+						 pool_buf = NULL;
+					 if (buf_type == NET_BUF_TYPE_HEAP)
+						 heap_buf = NULL;
+
+					 buf = NULL;
+
+					 state = NET_READER_STATE_GET_BUF;
+
+			  break;
+
+		}
+
+
+		if (atom_get_state(&data->thread_cnt_atomic) < 2)
+			exit = true;
+
+	}
+
+
+	if (pool_buf) net_free_net_buf(pool_buf);
+	if (heap_buf) net_free_net_buf(heap_buf);
+	
 	atom_dec(&data->thread_cnt_atomic);
-
-
-	//кол-во данных для ожидания = размер заголовка
-
-	//соостояние = 0
-
-	//таймаут = периодический
-
-//цикл:
-
-	//ожидание данных на сокете с таймаутом
-
-	//если тaймаут, то проверить параметры. при необходимости закрываем сокет, выходим из функции
-
-	//если ошибка сокета, то закрываем сокет, отмечаем ошибку в параметрах, выходим из функции
-
-	//разбор состояний:
-
-	  //0  если таймаут 
-
-
 }
+
+
+
 
 void net_writer_thread_func(void* params) {
 
@@ -733,6 +1010,11 @@ void net_writer_thread_func(void* params) {
 
 }
 
+
+
+
+
+static timeval net_sock_timeout;
 
 
 enum net_tcp_server_state_t {
@@ -835,6 +1117,15 @@ static void RTKAPI net_tcp_server_func(void* param){
 				ret = -1;
 
 				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
+
+				
+				net_sock_timeout.tv_sec = 3;
+				net_sock_timeout.tv_usec = 0;
+				
+				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_RCV_TIMEO, (PFCCHAR)&net_sock_timeout, sizeof(net_sock_timeout))) break;
+				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_SEND_TIMEO, (PFCCHAR)&net_sock_timeout, sizeof(net_sock_timeout))) break;
+		
+
 				//остальные добавлять сюда по необходимости
 
 				ret = 0;
