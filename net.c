@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <time.h>
 
-//#include <rttarget.h>
+
 #include <rtk32.h>
 #include <socket.h>
 #include <Clock.h>
@@ -208,7 +208,7 @@ net_buf_t* net_get_net_buf_from_msg(const net_msg_t* ptr) {
 }
 
 //получение нового буфера под сообщение с длиной данных len
-net_msg_t* net_get_msg_buf(size_t len) {
+net_msg_t* net_get_msg_buf(uint32_t len) {
 	
 	net_buf_t* buf = net_get_net_buf(NET_BUF_OVERHEAD + len);
 	if (buf == NULL)
@@ -690,6 +690,13 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned cha
 
 	net_buf_t* net_buf = net_get_net_buf_from_msg(msg);
 
+	//проверка длины
+	if (net_buf->buf_size < NET_BUF_OVERHEAD + msg->size) {
+		net_free_net_buf(net_buf);
+		return NET_ERR_INVALID_MSG;
+	}
+		
+
 	net_buf->channel = channel;
 	net_buf->net_msg.priority = priority < NET_QUEUE_PRIORITY_NUM ? priority : NET_PRIORITY_BACKGROUND;
 
@@ -833,11 +840,12 @@ void net_reader_thread_func(void* params) {
 	net_thread_state_t* data = (net_thread_state_t*)params;
 
 	
-	int state = 0;
+	int state = NET_READER_STATE_GET_BUF;
 	net_buf_t* pool_buf=NULL;
 	net_buf_t* heap_buf=NULL;
 
 	net_buf_t* buf = NULL;
+	net_msg_t* msg;
 
 
 	int ret;
@@ -958,6 +966,14 @@ void net_reader_thread_func(void* params) {
 					   exit = true;
 					   break;
 					}
+
+				   msg = (net_msg_t*)&buf->net_msg.msg_data;
+				   if (msg_size != sizeof(net_raw_msg_t) + sizeof(net_msg_t) + msg->size + 4) {
+					   //что-то не так с размерами сообщения, выходим
+					   exit = true;
+					   break;
+				   }
+
 				   state = NET_READER_STATE_SAVE_MSG;
 
 			  break;
@@ -1000,11 +1016,82 @@ void net_reader_thread_func(void* params) {
 }
 
 
+enum net_writer_states_t {
+	NET_WRITER_STATE_GET_MSG = 0,
+	NET_WRITER_STATE_SEND_MSG
+};
 
 
 void net_writer_thread_func(void* params) {
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
+
+	net_buf_t* buf = NULL;
+
+	int bytes_left;
+	uint8_t* ptr;
+	int ret;
+	
+
+	int state = NET_WRITER_STATE_GET_MSG;
+
+	bool exit = false;
+
+	while (!exit) {
+
+		switch (state) {
+		case NET_WRITER_STATE_GET_MSG:
+
+			if (!RTKGetTimed(data->write_mailbox, buf, CLKMilliSecsToTicks(1000)))
+				break;
+			if (buf == NULL) {
+				exit = true;
+				break;
+			}
+
+			//есть сообщения для передачи, подготавливаю для передачи
+			net_msg_t* msg = (net_msg_t*)&buf->net_msg.msg_data;
+			buf->net_msg.label = data->label;
+			memcpy((uint8_t*)msg + sizeof(net_msg_t) + msg->size , &buf->net_msg.label, 4);
+			buf->net_msg.size = sizeof(net_raw_msg_t) + sizeof(sizeof(net_msg_t)) + msg->size + 4;
+
+			data->label++;
+
+			ptr = (uint8_t*)&buf->net_msg;
+			bytes_left = (int)buf->net_msg.size;
+
+			state = NET_WRITER_STATE_SEND_MSG;
+
+			break;
+
+		case NET_WRITER_STATE_SEND_MSG:
+
+			ret = net_send(data->sock, ptr, bytes_left);
+			if (SOCKET_ERROR || ret>bytes_left) {
+				exit = true;
+				break;
+			}
+			
+			bytes_left -= ret;
+			
+			if (bytes_left == 0) {
+				net_free_net_buf(buf);
+				buf = NULL;
+				state = NET_WRITER_STATE_GET_MSG;
+			}
+
+			break;
+		}
+
+
+		if (atom_get_state(&data->thread_cnt_atomic) < 2)
+			exit = true;
+
+	}
+
+
+	if (buf) net_free_net_buf(buf);
+
 
 	atom_dec(&data->thread_cnt_atomic);
 

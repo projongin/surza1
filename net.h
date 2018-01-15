@@ -46,6 +46,7 @@ typedef enum {
 	NET_ERR_QUEUE_OVERFLOW,    //переполнение очереди сообщений
 	NET_ERR_MEM_ALLOC,         //ошибка выделения памяти
 	NET_ERR_NO_CONNECTIONS,    //нет активных соединений
+	NET_ERR_INVALID_MSG        //некорректное сообщение
 }  net_err_t;
 
 typedef enum {
@@ -63,7 +64,7 @@ typedef enum {
 typedef struct {
 	uint8_t  type;           //типа сообщения
 	uint8_t  subtype;        //подтип
-	size_t   size;           //длина данных
+	uint32_t size;           //длина данных
 	uint8_t  data[];         //данные сообщения
 } net_msg_t;
 #pragma pack(pop)
@@ -101,6 +102,7 @@ size_t net_msg_buf_get_available_space(const net_msg_t* buf);
 void net_free_msg_buf(net_msg_t* buf);
 
 //посылка нового сообщения
+//при любом исходе функция сама освобождает переданный ей буфер с сообщением
 net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned channel);
 
 //периодическая функция обработки
