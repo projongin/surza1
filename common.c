@@ -81,3 +81,37 @@ void atom_sub(volatile int *num, int val)
 
 
 
+#include "Rtk32.h"
+#include <stdbool.h>
+
+
+// определение сработал ли таймаут  с учетом природы типа RTKTime в РТОС32 (пока так, потом можно поискать более красивые варианты)
+bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time) {
+	if (start >= 0) {
+		if (stop > 0) {
+			// start>0, stop>0
+			if (time > stop)
+				return true;
+		}
+		else {
+			// start>0, stop<0
+			if (time<0 && time>stop)
+				return true;
+		}
+	}
+	else {
+		if (stop >= 0) {
+			// start<0, stop>0
+			if (time >= 0 && time > stop)
+				return true;
+		}
+		else {
+			// start<0, stop<0
+			if (time > stop)
+				return true;
+		}
+
+	}
+
+	return false;
+}

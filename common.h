@@ -29,3 +29,10 @@ void atom_sub(volatile int *num, int val);
 //------------------------------------------------------------------------------
 
 
+
+#include "Rtk32.h"
+#include <stdbool.h>
+
+// проверка сработавшего таймаута (start - время установки, stop - время срабатывания, time - текущее время)
+bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time);
+

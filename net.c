@@ -793,38 +793,6 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned cha
 
 
 
-// определение сработал ли таймаут  с учетом природы типа RTKTime в –“ќ—32 (пока так, потом можно поискать более красивые варианты)
-bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time) {
-	if (start >= 0) {
-		if (stop > 0) { 
-			// start>0, stop>0
-			if (time > stop)
-				return true;
-		}
-		else {
-			// start>0, stop<0
-			if (time<0 && time>stop)
-				return true;
-		}
-	}
-	else {
-		if (stop >= 0) {
-			// start<0, stop>0
-			if (time >= 0 && time > stop)
-				return true;
-		}
-		else {
-			// start<0, stop<0
-			if (time > stop)
-				return true;
-		}
-
-	}
-
-	return false;
-}
-
-
 enum net_reader_states_t {
 	NET_READER_STATE_GET_BUF = 0,
 	NET_READER_STATE_READ_SIZE,
@@ -833,7 +801,7 @@ enum net_reader_states_t {
 	NET_READER_STATE_SAVE_MSG
 };
 
-
+ 
 
 void net_reader_thread_func(void* params) {
 
@@ -851,13 +819,11 @@ void net_reader_thread_func(void* params) {
 	int ret;
 	
 	uint32_t msg_size;
-	uint8_t* data_ptr;
+	uint8_t* data_ptr=NULL;
 	int bytes_left;
+	int bytes_read=0;
 
 	uint32_t buf_len;
-
-	RTKTime start_time;
-	RTKTime stop_time;
 
 	enum net_buf_type buf_type;
 
@@ -869,87 +835,103 @@ void net_reader_thread_func(void* params) {
 		switch (state) {
 
 		  case NET_READER_STATE_GET_BUF:   //получение буфера
+			       
+			       LOG_AND_SCREEN("label_0,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 			       if (pool_buf==NULL) {
-					   net_get_net_buf(NET_BUF_SIZE);
-					   if (net_get_net_buf) 
+					   pool_buf = net_get_net_buf(NET_BUF_SIZE);
+					   if (!pool_buf) {
 						   RTKDelay(CLKMilliSecsToTicks(200));
+						   break;
+					   }
 				   }
+
+				   bytes_left = 4;
+				   data_ptr = (uint8_t*)&msg_size;
+				   bytes_read = 0;
+
 				   state = NET_READER_STATE_READ_SIZE;
-			        //если pool_buf==NULL, то получаю его
+
+				   LOG_AND_SCREEN("label_1,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
+			        
 			  break;
 
 		  case NET_READER_STATE_READ_SIZE:   //чтение общей длины сообщени€
 			       
-			       ret = recv(data->sock, (PFCHAR)&msg_size, sizeof(msg_size), MSG_PEEK);
-				   if (ret == 0) break;  // сработал таймаут сокета, нет вход€щих сообщений
-				   if (ret == SOCKET_ERROR) {
-					   exit = true;
-					   break;
-				   }
-				   if (ret != sizeof(msg_size)) {
-					   //втора€ попытка дочитать длину
-					   RTKDelay(CLKMilliSecsToTicks(10));
-					   ret = recv(data->sock, (PFCHAR)&msg_size, sizeof(msg_size), MSG_PEEK);
-					   if (ret != sizeof(msg_size)) {
-						   exit = true;
-						   break;
-					   }
-				   }
+			      ret = recv(data->sock, data_ptr, bytes_left, 0);
+				  if (ret == SOCKET_ERROR) {
+					  exit = true;
+					  break;
+				  }
 
-				   buf_len = msg_size + NET_RAW_MSG_OFFSET;
+				  LOG_AND_SCREEN("label_2,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
-				   //если длина превышает максимально допустимую длину сообщени€  - выходим
-				   if (buf_len > NET_MAX_NET_BUF_SIZE) {
-					   exit = true;
-					   break;
-				   }
-				   
-				   //выделение буфера из кучи, если длины буфера из пула недостаточна
-				   if (buf_len > NET_BUF_SIZE) {
-					   heap_buf = (net_buf_t*)malloc(buf_len);
-					   //при неудаче выделени€ буфера выходим
-					   if (heap_buf == NULL) {
-						   exit = true;
-						   break;
-					   }
-					   buf = heap_buf;
-				   } else buf = pool_buf;
+				  bytes_read += ret;
+				  bytes_left -= ret;
+				  data_ptr += ret;
 
-				   
-				   data_ptr = (uint8_t*)buf;
-				   data_ptr += NET_RAW_MSG_OFFSET;
-				   
-				   bytes_left=(int)msg_size;
+				  if (bytes_read < 4)
+					  break;
 
-				   //таймаут на получение всего сообщени€:   2000 миллисекунды безусловные + (длина сообщени€/64) миллисекунд   (из расчета минимальной скорости 15 секунд на мегабайт )
-				   start_time = RTKGetTime();
-				   stop_time = start_time + CLKMilliSecsToTicks(2000 + (msg_size >> 6));
+				  LOG_AND_SCREEN("label_3,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
+				  //хватает данных на определение длины сообщени€
 
-				   state = NET_READER_STATE_READ_MSG;
+				  if (msg_size < sizeof(net_raw_msg_t) + sizeof(net_msg_t) + 4) {
+					  //если длина меньше минимально допустимой (не хватает даже на сообщение без данных), то выходим
+					  exit = true;
+					  break;
+				  }
+
+				  LOG_AND_SCREEN("label_4,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
+
+				  buf_len = msg_size + NET_RAW_MSG_OFFSET;
+				  if (buf_len > NET_MAX_NET_BUF_SIZE) {
+					  //если длина превышает максимально допустимую длину сообщени€  - выходим
+					  exit = true;
+					  break;
+				  }
+
+				  LOG_AND_SCREEN("label_5,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
+
+				  //выделение буфера из кучи, если длины буфера из пула недостаточно
+				  if (buf_len > NET_BUF_SIZE) {
+					  heap_buf = net_get_net_buf(buf_len);
+					  //при неудаче выделени€ буфера выходим
+					  if (heap_buf == NULL) {
+						  exit = true;
+						  break;
+					  }
+					  buf = heap_buf;
+				  }
+				  else buf = pool_buf;
+
+				  LOG_AND_SCREEN("label_6,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
+
+				  buf->net_msg.size = msg_size;
+				  data_ptr = (uint8_t*)&buf->net_msg.size + 4;
+				  bytes_left = msg_size - bytes_read;
+
+				  state = NET_READER_STATE_READ_MSG;
 
 			  break;
 		  
 		  case NET_READER_STATE_READ_MSG:   //получение всего тела сообщени€ с таймаутом
-
-			       if (net_timeout_expired(start_time, stop_time, RTKGetTime())) { //проверка таймаута с учетом природы типа RTKTime
-				       //если сработал общий таймер на получение - выходим
-					   exit = true;
-					   break;
-				   }
 
 				   ret = recv(data->sock, data_ptr, bytes_left, 0);
 				   if (ret == SOCKET_ERROR) {
 					   exit = true;
 					   break;
 				   }
-				   if (ret<0 || ret> bytes_left) {
+
+				   LOG_AND_SCREEN("label_7,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
+
+				   if (ret<0 || ret>bytes_left) {
 					   exit = true;
 					   break;
 				   }
-				   if (ret == 0)  //таймаут сокета сработал
-					   break;
+
+				   LOG_AND_SCREEN("label_8,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 				   
 				   data_ptr += ret;
 				   bytes_left -= ret;
@@ -961,11 +943,15 @@ void net_reader_thread_func(void* params) {
 
 		  case NET_READER_STATE_CHECK_MSG:   //проверка сообщени€
 
+			       LOG_AND_SCREEN("label_9,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
+
 			        //если не проходит проверку - выходим
 			       if (memcmp(&buf->net_msg.label, data_ptr-4, 4)) {
 					   exit = true;
 					   break;
 					}
+
+				   LOG_AND_SCREEN("label_10,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				   msg = (net_msg_t*)&buf->net_msg.msg_data;
 				   if (msg_size != sizeof(net_raw_msg_t) + sizeof(net_msg_t) + msg->size + 4) {
@@ -974,11 +960,15 @@ void net_reader_thread_func(void* params) {
 					   break;
 				   }
 
+				   LOG_AND_SCREEN("label_11,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
+
 				   state = NET_READER_STATE_SAVE_MSG;
 
 			  break;
 
 		  case NET_READER_STATE_SAVE_MSG:   //добавл€ем сообщение в очередь с проверкой ее забитости
+			         
+			         LOG_AND_SCREEN("label_12,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 			         buf_type = buf->buf_type;
 			  
@@ -986,6 +976,8 @@ void net_reader_thread_func(void* params) {
 						 RTKDelay(CLKMilliSecsToTicks(200));   //очередь забита, пробуем снова с задержкой
 						 break;
 					 }
+
+					 LOG_AND_SCREEN("label_13,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 					 //сообщение успешно добавлено во входную очередь
 
@@ -1067,7 +1059,7 @@ void net_writer_thread_func(void* params) {
 		case NET_WRITER_STATE_SEND_MSG:
 
 			ret = net_send(data->sock, ptr, bytes_left);
-			if (SOCKET_ERROR || ret>bytes_left) {
+			if (ret == SOCKET_ERROR || ret>bytes_left) {
 				exit = true;
 				break;
 			}
@@ -1097,11 +1089,6 @@ void net_writer_thread_func(void* params) {
 
 }
 
-
-
-
-
-static timeval net_sock_timeout;
 
 
 enum net_tcp_server_state_t {
@@ -1204,14 +1191,10 @@ static void RTKAPI net_tcp_server_func(void* param){
 				ret = -1;
 
 				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
-
-				
-				net_sock_timeout.tv_sec = 3;
-				net_sock_timeout.tv_usec = 0;
-				
-				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_RCV_TIMEO, (PFCCHAR)&net_sock_timeout, sizeof(net_sock_timeout))) break;
-				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_SEND_TIMEO, (PFCCHAR)&net_sock_timeout, sizeof(net_sock_timeout))) break;
 		
+
+				net_set_blocking(thread_data->sock);
+				
 
 				//остальные добавл€ть сюда по необходимости
 
