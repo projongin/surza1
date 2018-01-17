@@ -386,16 +386,19 @@ void* net_remove_from_main_queue(net_main_queue_type_t queue, net_msg_priority_t
 	net_queue_node_t* node = priority_queue_head[queue][priority];
 	net_queue_node_t* prev = NULL;
 	
-	while (node) {
-		if (net_skip_type_num[queue] > 0) {
+	if (net_skip_type_num[queue] > 0) {
+		while (node) {
 			//надо пропускать некоторые типы сообщений
-			for (int i = 0; i < net_skip_type_num[queue]; i++) {
+			int i;
+			for (i = 0; i < net_skip_type_num[queue]; i++) {
 				if (node->type == net_skip_type[queue][i]) {
 					prev = node;
 					node = node->next;
 					break;
 				}
 			}
+			if (i == net_skip_type_num[queue]) //если тип не совпадает ни с одним из тех что надо пропускать
+				break;
 		}
 	}
 	
@@ -806,7 +809,6 @@ enum net_reader_states_t {
 void net_reader_thread_func(void* params) {
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
-
 	
 	int state = NET_READER_STATE_GET_BUF;
 	net_buf_t* pool_buf=NULL;
@@ -859,7 +861,7 @@ void net_reader_thread_func(void* params) {
 		  case NET_READER_STATE_READ_SIZE:   //чтение общей длины сообщения
 			       
 			      ret = recv(data->sock, data_ptr, bytes_left, 0);
-				  if (ret == SOCKET_ERROR) {
+				  if (ret == SOCKET_ERROR || ret==0) {
 					  exit = true;
 					  break;
 				  }
@@ -926,7 +928,7 @@ void net_reader_thread_func(void* params) {
 
 				   LOG_AND_SCREEN("label_7,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
-				   if (ret<0 || ret>bytes_left) {
+				   if (ret<=0 || ret>bytes_left) {
 					   exit = true;
 					   break;
 				   }
@@ -972,7 +974,7 @@ void net_reader_thread_func(void* params) {
 
 			         buf_type = buf->buf_type;
 			  
-			         if (RTKPutCond(data->read_mailbox, buf) == FALSE) {
+			         if (RTKPutCond(data->read_mailbox, &buf) == FALSE) {
 						 RTKDelay(CLKMilliSecsToTicks(200));   //очередь забита, пробуем снова с задержкой
 						 break;
 					 }
@@ -1191,7 +1193,6 @@ static void RTKAPI net_tcp_server_func(void* param){
 				ret = -1;
 
 				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
-		
 
 				net_set_blocking(thread_data->sock);
 				
@@ -1222,6 +1223,16 @@ static void RTKAPI net_tcp_server_func(void* param){
 
 			thread_data->writer_handle = RTKRTLCreateThread(net_writer_thread_func, NET_TCP_WRITER_PRIORITY, 200000, TF_NO_MATH_CONTEXT, thread_data, net_writer_thread_name);
 			thread_data->reader_handle = RTKRTLCreateThread(net_reader_thread_func, NET_TCP_READER_PRIORITY, 200000, TF_NO_MATH_CONTEXT, thread_data, net_reader_thread_name);
+
+#if 0
+			{
+				//RTKDelay(2000);
+				char bbb[100];
+				int ret;
+				ret = recv(thread_data->sock, bbb, 100, 0);
+				LOG_AND_SCREEN("ret=%d", ret);
+			}
+#endif
 
 			break;
 
@@ -1303,6 +1314,7 @@ void net_read_recv_queues() {
 				if (res && net_buf) {
 					// добавить сообщение в общую очередь приема
 					net_buf->net_msg.priority = (net_buf->net_msg.priority < NET_QUEUE_PRIORITY_NUM ? net_buf->net_msg.priority : NET_PRIORITY_BACKGROUND);
+					net_buf->channel = data->channel;
 					if (net_add_to_main_queue(NET_MAIN_QUEUE_RECV, net_buf->net_msg.priority, net_buf->channel, false, net_buf) < 0) {
 						net_free_net_buf(net_buf);
 					}		

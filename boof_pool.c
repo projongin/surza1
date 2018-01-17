@@ -103,7 +103,7 @@ void* buf_pool_get(int pool_num) {
 
 		
 #ifdef BUF_POOL_DEBUG_PRINT
-	printf("buf_pool_get(%d) %s\n", pool_num, p?"ok":"failed");
+	 printf("buf_pool_get(%d) %s, adr=0x%0X\n", pool_num, p?"ok":"failed", (int)p);	
 #endif
 
 	return p;
@@ -128,7 +128,7 @@ bool buf_pool_free(int pool_num, void* ptr) {
 
 
 #ifdef BUF_POOL_DEBUG_PRINT
-	printf("buf_pool_free(%d)\n", pool_num);
+	printf("buf_pool_free(%d), adr=0x%0X\n", pool_num, (unsigned)ptr);
 #endif
 
 	return ok;
