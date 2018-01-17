@@ -445,8 +445,24 @@ void net_main_queue_skip_reset(net_main_queue_type_t queue) {
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+static net_realtime_callback realtime_callback = NULL;
 
 
+static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buffer_size) {
+
+
+	if(realtime_callback)
+	  if (*(word*)(data + 0x0C) == 0x0008 &&   //IP  
+		  data[0x17] == 220) // свой протокол, не совпадающий с известными зарегистрированными
+	  {
+		  //!!!!!!!   разобраться, входит ли в length поле crc из ethernet фрейма и паддинг
+		  int offset = 14 + (data[14] & 0xf) * 4;  //начало данных = смещене заголовка IP + размер самого заголовка IP
+		  realtime_callback(data + offset, length - offset - 4); //4 - предполагамый crc, но возможно он не входит  с общую длину 
+		  return 0;
+	  }
+
+	return length;
+}
 
 
 
@@ -533,7 +549,7 @@ void InterfaceCleanup(void)
 
 
 //инициализация контроллера и создание tcp сервера
-net_err_t net_init(net_msg_dispatcher dispatcher) {
+net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_callback) {
 	int res;
 
 	
@@ -548,11 +564,19 @@ net_err_t net_init(net_msg_dispatcher dispatcher) {
 	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	//доп настройки
 	//
-	CFG_KA_INTERVAL = 20;
+	CFG_TCP_SEND_WAIT_ACK = 0;
+	CFG_ARP_TIMEOUT = 60;
+	CFG_KA_INTERVAL = 10;
 	CFG_KA_RETRY = 4;
 	CFG_KA_TMO = 10;
 	CFG_TIMER_FREQ = 50;
 	SIZESTACK_HUGE = 1024;
+	CFG_MAX_DELAY_ACK = 20;
+	CFG_MAXRTO = 3000;
+	CFG_MINRTO = 1000;
+	CFG_RETRANS_TMO = 10000;
+	CFG_REPORT_TMO = CFG_RETRANS_TMO / 2;
+	CFG_LASTTIME = 10;
 	//--------------------------------------
 
 	res = xn_rtip_init();
@@ -627,7 +651,13 @@ net_err_t net_init(net_msg_dispatcher dispatcher) {
 		conn_data->channel = conn_data->label;
 
 	}
-	 
+	
+	
+	//установка колбека реального времени
+	if (real_callback) {
+		xn_callbacks()->cb_packetin_isr = net_packed_in_isr_func;
+		realtime_callback = real_callback;
+	}
 
 
 
@@ -1193,6 +1223,7 @@ static void RTKAPI net_tcp_server_func(void* param){
 				ret = -1;
 
 				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
+				if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_NAGLE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
 
 				net_set_blocking(thread_data->sock);
 				
@@ -1224,15 +1255,6 @@ static void RTKAPI net_tcp_server_func(void* param){
 			thread_data->writer_handle = RTKRTLCreateThread(net_writer_thread_func, NET_TCP_WRITER_PRIORITY, 200000, TF_NO_MATH_CONTEXT, thread_data, net_writer_thread_name);
 			thread_data->reader_handle = RTKRTLCreateThread(net_reader_thread_func, NET_TCP_READER_PRIORITY, 200000, TF_NO_MATH_CONTEXT, thread_data, net_reader_thread_name);
 
-#if 0
-			{
-				//RTKDelay(2000);
-				char bbb[100];
-				int ret;
-				ret = recv(thread_data->sock, bbb, 100, 0);
-				LOG_AND_SCREEN("ret=%d", ret);
-			}
-#endif
 
 			break;
 

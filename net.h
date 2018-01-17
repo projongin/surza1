@@ -70,13 +70,16 @@ typedef struct {
 #pragma pack(pop)
 
 
-
+//тип обработчика сообщений
 typedef void(*net_msg_dispatcher)(net_msg_t* msg, uint64_t channel);
 
+//тип обработчика данных реального времени, вызывается из прерывания сетевого контроллера
+typedef void(*net_realtime_callback)(const void* data, int length);
 
 
 //инициализация контроллера и создание tcp сервера
-net_err_t net_init(net_msg_dispatcher default_dispatcher);
+//колбэк сообщений по-умолчанию и колбэк реального времени могут быть  NULL если не используются
+net_err_t net_init(net_msg_dispatcher default_dispatcher, net_realtime_callback real_callback);
 
 
 //разрешение получения сообщений

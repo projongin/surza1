@@ -109,7 +109,7 @@ int  main(int argc, char * argv[])
 		}
 
 		
-		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback)) {
+		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, NULL)) {
 			LOG_AND_SCREEN("net_init()  fail!");
 			init_ok = false;
 			break;
