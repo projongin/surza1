@@ -53,6 +53,9 @@
 ========================================================================================================
 */
 
+//номер протокола поверх IP для передачи данных в реальном времени (не должен совпадать с известными зарегистрированными)
+#define NET_REALTIME_IP_PROTOCOL_NUM   200
+
 
 enum net_buf_type {
 	NET_BUF_TYPE_POOL = 0,
@@ -443,21 +446,102 @@ void net_main_queue_skip_reset(net_main_queue_type_t queue) {
 	net_skip_type_num[queue] = 0;
 }
 
+
+
+void net_main_queue_test() {
+   
+	int ret;
+	int cnt;
+	char* ptr;
+
+	while (true) {
+
+		cnt = 0;
+		ptr = 0;
+
+		do {
+			while (ptr == 0) ptr = (char*)((unsigned)rand());
+			ret = net_add_to_main_queue(0, ((unsigned)rand()) % NET_QUEUE_PRIORITY_NUM, ((unsigned)rand()) % NET_MAX_CONNECTIONS_ALLOWED, (((unsigned)rand())%2)?true:false, ptr);
+			if (ret == 0)
+				cnt++;
+		} while (ret == 0);
+
+		LOG_AND_SCREEN("added  cnt=%d, net_queue_node_stack_ptr=%d", cnt, net_queue_node_stack_ptr[0]);
+
+
+		net_main_queue_skip_type(0, 0);
+		net_main_queue_skip_type(0, 1);
+		net_main_queue_skip_type(0, 2);
+		net_main_queue_skip_type(0, 4);
+		while (net_remove_from_main_queue_by_priority(0))
+			cnt--;
+		LOG_AND_SCREEN("removed all type3 cnt=%d, net_queue_node_stack_ptr=%d", cnt, net_queue_node_stack_ptr[0]);
+		net_main_queue_skip_reset(0);
+
+
+		net_main_queue_skip_type(0, 1);
+		net_main_queue_skip_type(0, 2);
+		net_main_queue_skip_type(0, 3);
+		net_main_queue_skip_type(0, 4);
+		while (net_remove_from_main_queue_by_priority(0))
+			cnt--;
+		LOG_AND_SCREEN("removed all type0 cnt=%d, net_queue_node_stack_ptr=%d", cnt, net_queue_node_stack_ptr[0]);
+		net_main_queue_skip_reset(0);
+
+		net_main_queue_skip_type(0, 0);
+		net_main_queue_skip_type(0, 2);
+		net_main_queue_skip_type(0, 3);
+		net_main_queue_skip_type(0, 4);
+		while (net_remove_from_main_queue_by_priority(0))
+			cnt--;
+		LOG_AND_SCREEN("removed all type1 cnt=%d, net_queue_node_stack_ptr=%d", cnt, net_queue_node_stack_ptr[0]);
+		net_main_queue_skip_reset(0);
+
+
+		net_main_queue_skip_type(0, 0);
+		net_main_queue_skip_type(0, 1);
+		net_main_queue_skip_type(0, 3);
+		net_main_queue_skip_type(0, 4);
+		while (net_remove_from_main_queue_by_priority(0))
+			cnt--;
+		LOG_AND_SCREEN("removed all type2 cnt=%d, net_queue_node_stack_ptr=%d", cnt, net_queue_node_stack_ptr[0]);
+		net_main_queue_skip_reset(0);
+
+
+		net_main_queue_skip_type(0, 0);
+		net_main_queue_skip_type(0, 1);
+		net_main_queue_skip_type(0, 2);
+		net_main_queue_skip_type(0, 3);
+		while (net_remove_from_main_queue_by_priority(0))
+			cnt--;
+		LOG_AND_SCREEN("removed all type4 cnt=%d, net_queue_node_stack_ptr=%d", cnt, net_queue_node_stack_ptr[0]);
+		net_main_queue_skip_reset(0);
+
+
+		if (cnt != 0 || net_queue_node_stack_ptr[0] != NET_NODE_STACK_SIZE) {
+			LOG_AND_SCREEN("FAULT FAULT FAULT FAULT FAULT FAULT FAULT FAULT FAULT FAULT FAULT FAULT");
+			while (true);
+		}
+		else {
+			LOG_AND_SCREEN("OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK OK");
+		}
+	}
+}
+
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 static net_realtime_callback realtime_callback = NULL;
 
 
-static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buffer_size) {
 
+static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buffer_size) {
 
 	if(realtime_callback)
 	  if (*(word*)(data + 0x0C) == 0x0008 &&   //IP  
-		  data[0x17] == 220) // свой протокол, не совпадающий с известными зарегистрированными
+		  data[0x17] == NET_REALTIME_IP_PROTOCOL_NUM) // свой протокол, не совпадающий с известными зарегистрированными
 	  {
-		  //!!!!!!!   разобраться, входит ли в length поле crc из ethernet фрейма и паддинг
-		  int offset = 14 + (data[14] & 0xf) * 4;  //начало данных = смещене заголовка IP + размер самого заголовка IP
-		  realtime_callback(data + offset, length - offset - 4); //4 - предполагамый crc, но возможно он не входит  с общую длину 
+		  int offset = 14 + (data[14] & 0xf) * 4;  //начало данных = смещение заголовка IP + размер самого заголовка IP
+		  realtime_callback(data + offset, length - offset);  //за счет паддинга на мелких фреймах ethernet передаваемая длина может быть больше реального количества полезных байт
 		  return 0;
 	  }
 

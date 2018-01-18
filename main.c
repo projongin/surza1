@@ -50,13 +50,13 @@ DWORD _fastcall disable_smi(void *p)
 
 #define WATCHDOG_UPDATE  ;
 
-//void* mem_table[65536];
 
 //------------------
 void tmp_net_callback(net_msg_t* msg, uint64_t channel) {}
+
+void tmp_net_realtime_callback(const void* data, int length) {}
+
 //------------------
-
-
 
 
 
@@ -109,7 +109,7 @@ int  main(int argc, char * argv[])
 		}
 
 		
-		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, NULL)) {
+		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, tmp_net_realtime_callback)) {
 			LOG_AND_SCREEN("net_init()  fail!");
 			init_ok = false;
 			break;
@@ -141,7 +141,10 @@ int  main(int argc, char * argv[])
 	//---------------------------------
 	//тесты модулей
 	//printf("\n buf_pool_test() = %d\n", buf_pool_test());
+	extern net_main_queue_test();
 
+
+	net_main_queue_test();
 
 	//---------------------------------
 
@@ -153,7 +156,7 @@ int  main(int argc, char * argv[])
 			// основной цикл работы
 			//============================================================================================================
 
-			net_update();
+			//net_update();
 
 
 		//RTKDelay(CLKMilliSecsToTicks(10));
