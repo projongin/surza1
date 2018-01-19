@@ -110,7 +110,7 @@ typedef struct {
 #define NET_MSG_OFFSET         (offsetof(net_raw_msg_t, msg_data))
 #define NET_RAW_MSG_OFFSET     (offsetof(net_buf_t, net_msg))
 
-#define NET_BUF_TO_MSG_OFFSET  (NET_RAW_MSG_OFFSET + NET_RAW_MSG_OFFSET)
+#define NET_BUF_TO_MSG_OFFSET  (NET_RAW_MSG_OFFSET + NET_MSG_OFFSET)
 
 #define NET_BUF_OVERHEAD       (NET_BUF_TO_MSG_OFFSET + sizeof(net_msg_t) + 4)
 
@@ -648,6 +648,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	//доп настройки
 	//
+	/*
 	CFG_TCP_SEND_WAIT_ACK = 0;
 	CFG_ARP_TIMEOUT = 60;
 	CFG_KA_INTERVAL = 10;
@@ -661,6 +662,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	CFG_RETRANS_TMO = 10000;
 	CFG_REPORT_TMO = CFG_RETRANS_TMO / 2;
 	CFG_LASTTIME = 10;
+	*/
 	//--------------------------------------
 
 	res = xn_rtip_init();
@@ -800,7 +802,7 @@ volatile unsigned net_connections() {
 
 
 //посылка нового сообщения
-net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned channel) {
+net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t channel) {
 
 	if (save_callback_buf == msg)
 		save_callback_buf = NULL;
@@ -920,6 +922,10 @@ enum net_reader_states_t {
 
  
 
+/*!!!*******/
+volatile int mmm = 0;
+/*******/
+
 void net_reader_thread_func(void* params) {
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
@@ -977,6 +983,9 @@ void net_reader_thread_func(void* params) {
 			      ret = recv(data->sock, data_ptr, bytes_left, 0);
 				  if (ret == SOCKET_ERROR || ret==0) {
 					  exit = true;
+					  /*!!!!*/
+					  mmm = 1;
+					  /*****/
 					  break;
 				  }
 
@@ -996,6 +1005,9 @@ void net_reader_thread_func(void* params) {
 				  if (msg_size < sizeof(net_raw_msg_t) + sizeof(net_msg_t) + 4) {
 					  //если длина меньше минимально допустимой (не хватает даже на сообщение без данных), то выходим
 					  exit = true;
+					  /*!!!!*/
+					  mmm = 2;
+					  /*****/
 					  break;
 				  }
 
@@ -1005,6 +1017,9 @@ void net_reader_thread_func(void* params) {
 				  if (buf_len > NET_MAX_NET_BUF_SIZE) {
 					  //если длина превышает максимально допустимую длину сообщения  - выходим
 					  exit = true;
+					  /*!!!!*/
+					  mmm = 3;
+					  /*****/
 					  break;
 				  }
 
@@ -1016,6 +1031,9 @@ void net_reader_thread_func(void* params) {
 					  //при неудаче выделения буфера выходим
 					  if (heap_buf == NULL) {
 						  exit = true;
+						  /*!!!!*/
+						  mmm = 4;
+						  /*****/
 						  break;
 					  }
 					  buf = heap_buf;
@@ -1037,6 +1055,9 @@ void net_reader_thread_func(void* params) {
 				   ret = recv(data->sock, data_ptr, bytes_left, 0);
 				   if (ret == SOCKET_ERROR) {
 					   exit = true;
+					   /*!!!!*/
+					   mmm = 5;
+					   /*****/
 					   break;
 				   }
 
@@ -1044,6 +1065,9 @@ void net_reader_thread_func(void* params) {
 
 				   if (ret<=0 || ret>bytes_left) {
 					   exit = true;
+					   /*!!!!*/
+					   mmm = 6;
+					   /*****/
 					   break;
 				   }
 
@@ -1064,6 +1088,9 @@ void net_reader_thread_func(void* params) {
 			        //если не проходит проверку - выходим
 			       if (memcmp(&buf->net_msg.label, data_ptr-4, 4)) {
 					   exit = true;
+					   /*!!!!*/
+					   mmm = 7;
+					   /*****/
 					   break;
 					}
 
@@ -1073,6 +1100,9 @@ void net_reader_thread_func(void* params) {
 				   if (msg_size != sizeof(net_raw_msg_t) + sizeof(net_msg_t) + msg->size + 4) {
 					   //что-то не так с размерами сообщения, выходим
 					   exit = true;
+					   /*!!!!*/
+					   mmm = 8;
+					   /*****/
 					   break;
 				   }
 
@@ -1119,6 +1149,8 @@ void net_reader_thread_func(void* params) {
 
 	if (pool_buf) net_free_net_buf(pool_buf);
 	if (heap_buf) net_free_net_buf(heap_buf);
+
+	shutdown(data->sock, 0);
 	
 	atom_dec(&data->thread_cnt_atomic);
 }
@@ -1130,6 +1162,11 @@ enum net_writer_states_t {
 };
 
 
+
+/*!!!*******/
+volatile int lll = 0;
+/*******/
+
 void net_writer_thread_func(void* params) {
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
@@ -1139,7 +1176,8 @@ void net_writer_thread_func(void* params) {
 	int bytes_left;
 	uint8_t* ptr;
 	int ret;
-	
+
+	RTKBool res;
 
 	int state = NET_WRITER_STATE_GET_MSG;
 
@@ -1150,10 +1188,14 @@ void net_writer_thread_func(void* params) {
 		switch (state) {
 		case NET_WRITER_STATE_GET_MSG:
 
-			if (!RTKGetTimed(data->write_mailbox, buf, CLKMilliSecsToTicks(1000)))
+			res = RTKGetTimed(data->write_mailbox, &buf, CLKMilliSecsToTicks(1000));
+			if (res==FALSE)
 				break;
-			if (buf == NULL) {
+			if (res==TRUE && buf == NULL) {
 				exit = true;
+				/*!!!!*/
+				lll = 1;
+				/*****/
 				break;
 			}
 
@@ -1161,7 +1203,7 @@ void net_writer_thread_func(void* params) {
 			net_msg_t* msg = (net_msg_t*)&buf->net_msg.msg_data;
 			buf->net_msg.label = data->label;
 			memcpy((uint8_t*)msg + sizeof(net_msg_t) + msg->size , &buf->net_msg.label, 4);
-			buf->net_msg.size = sizeof(net_raw_msg_t) + sizeof(sizeof(net_msg_t)) + msg->size + 4;
+			buf->net_msg.size = sizeof(net_raw_msg_t) + sizeof(net_msg_t) + msg->size + 4;
 
 			data->label++;
 
@@ -1177,15 +1219,26 @@ void net_writer_thread_func(void* params) {
 			ret = net_send(data->sock, ptr, bytes_left);
 			if (ret == SOCKET_ERROR || ret>bytes_left) {
 				exit = true;
+				/*!!!!*/
+				lll = xn_getlasterror();
+
+				printf("JOPA JOPA JOPA !!!   lll=%d,  sock=%d\n", lll, data->sock);
+				//RTKDelay(CLKMilliSecsToTicks(100));
+				/*****/
 				break;
 			}
 			
 			bytes_left -= ret;
+			ptr += ret;
 			
 			if (bytes_left == 0) {
+				ptr = (uint8_t*)&buf->net_msg;
+				bytes_left = (int)buf->net_msg.size;
+				/*
 				net_free_net_buf(buf);
 				buf = NULL;
-				state = NET_WRITER_STATE_GET_MSG;
+				state = NET_WRITER_STATE_GET_MSG;				
+				*/
 			}
 
 			break;
@@ -1199,6 +1252,8 @@ void net_writer_thread_func(void* params) {
 
 
 	if (buf) net_free_net_buf(buf);
+
+	shutdown(data->sock, 1);
 
 
 	atom_dec(&data->thread_cnt_atomic);
@@ -1305,9 +1360,12 @@ static void RTKAPI net_tcp_server_func(void* param){
 			//опции сокета 
 			while (true) {
 				ret = -1;
-
-				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
+				
+				/*
+				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;	
 				if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_NAGLE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
+				*/
+				
 
 				net_set_blocking(thread_data->sock);
 				
@@ -1448,8 +1506,10 @@ void net_write_send_queues() {
 			  ch = -1;
 			  for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
 				  if (net_thread_state[i].sock != INVALID_SOCKET
-					  && net_thread_state[i].channel == net_buf->channel)
+					  && net_thread_state[i].channel == net_buf->channel) {
 					  ch = i;
+					  break;
+				  }
 			  
 			  if (ch < 0) {
 				  //канал не найден, удаляем сообщение
@@ -1457,7 +1517,7 @@ void net_write_send_queues() {
 
 			  } else {
 				  
-				  res = RTKPutCond(net_thread_state[ch].write_mailbox, net_buf);
+				  res = RTKPutCond(net_thread_state[ch].write_mailbox, &net_buf);
 				  if (res == FALSE) {
 					  //возвращаем буфер в общую очередь
 					  net_add_to_main_queue(NET_MAIN_QUEUE_SEND, net_buf->net_msg.priority, net_buf->channel, true, net_buf);

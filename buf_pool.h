@@ -7,7 +7,7 @@
 
 #include "global_defines.h"
 
-#define BUF_POOL_DEBUG_PRINT
+#define _BUF_POOL_DEBUG_PRINT
 
 
 
@@ -40,6 +40,8 @@ bool buf_pool_free(int pool_num, void*);
 //получить размер буфера, 0 в случае ошибки
 size_t buf_pool_size(int pool_num);
 
+//получить количество доступных буферов в пуле, <0 при ошибке
+int buf_pool_bufs_available(int pool_num);
 
 //----------------------
 //тестовая функция

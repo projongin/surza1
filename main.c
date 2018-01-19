@@ -1,5 +1,4 @@
-#include <Rtk32.h>
-#include <Rttarget.h>
+
 #include <Clock.h>
 
 #include <time.h>
@@ -7,6 +6,8 @@
 #include <stdint.h>
 
 #include <Rtkflt.h>
+#include <Rtk32.h>
+#include <Rttarget.h>
 
 
 #include <stdio.h>
@@ -52,7 +53,9 @@ DWORD _fastcall disable_smi(void *p)
 
 
 //------------------
-void tmp_net_callback(net_msg_t* msg, uint64_t channel) {}
+void tmp_net_callback(net_msg_t* msg, uint64_t channel) {
+	net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
+}
 
 void tmp_net_realtime_callback(const void* data, int length) {}
 
@@ -141,13 +144,18 @@ int  main(int argc, char * argv[])
 	//---------------------------------
 	//тесты модулей
 	//printf("\n buf_pool_test() = %d\n", buf_pool_test());
-	extern net_main_queue_test();
-
-
-	net_main_queue_test();
+	
+	
+	//extern net_main_queue_test();
+	//net_main_queue_test();
 
 	//---------------------------------
+	
+	RTKTime time, time_prev;
+	time = RTKGetTime();
+	time_prev = time;
 
+	//---------------------
 
 	while (true) {
 		WATCHDOG_UPDATE
@@ -156,8 +164,24 @@ int  main(int argc, char * argv[])
 			// основной цикл работы
 			//============================================================================================================
 
-			//net_update();
+			net_update();
 
+
+
+
+
+		    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		     time = RTKGetTime();
+			 if (CLKTicksToSeconds(time) != CLKTicksToSeconds(time_prev)) {
+				 time_prev = time;
+
+				 printf("buf_pool available buf = %d\n", buf_pool_bufs_available(0));
+			 }
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+			// RTKDelay(CLKMilliSecsToTicks(50));
 
 		//RTKDelay(CLKMilliSecsToTicks(10));
 

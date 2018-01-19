@@ -96,7 +96,7 @@ volatile unsigned net_connections();
 
 
 //получение нового буфера под сообщение с длиной данных len
-net_msg_t* net_get_msg_buf(size_t len);
+net_msg_t* net_get_msg_buf(uint32_t len);
 
 //получить максимально возможный размер данных для сохранения в сообщении
 size_t net_msg_buf_get_available_space(const net_msg_t* buf);
@@ -106,7 +106,7 @@ void net_free_msg_buf(net_msg_t* buf);
 
 //посылка нового сообщения
 //при любом исходе функция сама освобождает переданный ей буфер с сообщением
-net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, unsigned channel);
+net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t channel);
 
 //периодическая функция обработки
 net_err_t net_update(void);

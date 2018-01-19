@@ -143,6 +143,21 @@ size_t buf_pool_size(int pool_num) {
 }
 
 
+//получить количество доступных буферов в пуле, <0 при ошибке
+int buf_pool_bufs_available(int pool_num) {
+	if (!buf_pool_init_ok || pool_num >= buf_pool_num) return -1;
+
+	buf_pool_t* pool = &buf_pools[pool_num];
+	int s;
+
+	RTKWait(pool->mutex);
+       s = pool->size - pool->stack_ptr;
+	RTKSignal(pool->mutex);
+
+	return s;
+}
+
+
 
 //==============================================================================================
 
