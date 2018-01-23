@@ -57,6 +57,18 @@
 #define NET_REALTIME_IP_PROTOCOL_NUM   200
 
 
+//приоритет потока TCP сервера
+#define NET_TCP_SERVER_PRIORITY    (RTKConfig.MainPriority+3)
+
+//приоритет записывающего потока
+#define NET_TCP_WRITER_PRIORITY    (RTKConfig.MainPriority+2)
+
+//приоритет читающего потока
+#define NET_TCP_READER_PRIORITY    (RTKConfig.MainPriority+1)
+
+
+
+
 enum net_buf_type {
 	NET_BUF_TYPE_POOL = 0,
     NET_BUF_TYPE_HEAP
@@ -144,6 +156,9 @@ bool net_buf_pool_init() {
 	return true;
 }
 
+//!!!!!--------
+volatile int net_test_heap_bufs = 0;
+//!!!!!!!!!!!!!
 
 
 //получение нового буфера
@@ -169,6 +184,10 @@ net_buf_t* net_get_net_buf(size_t len) {
 
 		buf->buf_type = NET_BUF_TYPE_HEAP;
 		buf->buf_size = len;
+
+		//!!!!!!!--------
+		atom_inc(&net_test_heap_bufs);
+		//!!!!!!!!!!!
 	}
 
 	return buf;
@@ -185,6 +204,9 @@ void net_free_net_buf(net_buf_t* buf) {
 	}
 	else if (buf->buf_type == NET_BUF_TYPE_HEAP) {
 		free(buf);
+		//!!!!!!!--------
+		atom_dec(&net_test_heap_bufs);
+		//!!!!!!!!!!!
 	}
 	
 }
@@ -652,6 +674,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	
 	//CFG_TCP_SEND_WAIT_ACK = 0;
 
+
 	CFG_ARP_TIMEOUT = 60;
 	CFG_KA_INTERVAL = 10;
 	CFG_KA_RETRY = 4;
@@ -665,6 +688,12 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	CFG_RETRANS_TMO = 10000;
 	CFG_REPORT_TMO = CFG_RETRANS_TMO / 2;
 	CFG_LASTTIME = 10;
+
+
+	PRIOTASK_HI = NET_TCP_SERVER_PRIORITY + 1;
+	PRIOTASK_HIGHEST = NET_TCP_SERVER_PRIORITY + 2;
+	SIZESTACK_NORMAL = 0xffff;
+
 	
 	//--------------------------------------
 
@@ -982,7 +1011,7 @@ void net_reader_thread_func(void* params) {
 			  break;
 
 		  case NET_READER_STATE_READ_SIZE:   //чтение общей длины сообщения
-			       
+			      
 			      ret = recv(data->sock, data_ptr, bytes_left, 0);
 				  if (ret == SOCKET_ERROR || ret==0) {
 					  exit = true;
@@ -1224,6 +1253,7 @@ void net_writer_thread_func(void* params) {
 				exit = true;
 				/*!!!!*/
 				lll = xn_getlasterror();
+				
 
 				printf("JOPA JOPA JOPA !!!   lll=%d,  sock=%d\n", lll, data->sock);
 				//RTKDelay(CLKMilliSecsToTicks(100));
@@ -1465,7 +1495,6 @@ void net_connection_control_func() {
 
 				}
 
-				break;
 			}
 
 }

@@ -25,15 +25,6 @@
 
 
 
-//приоритет потока TCP сервера
-#define NET_TCP_SERVER_PRIORITY    (RTKConfig.MainPriority+1)
-
-//приоритет записывающего потока
-#define NET_TCP_WRITER_PRIORITY    (RTKConfig.MainPriority+3)
-
-//приоритет читающего потока
-#define NET_TCP_READER_PRIORITY    (RTKConfig.MainPriority+2)
-
 
 //номер канала для отправки всем подключенным клиентам
 #define NET_BROADCAST_CHANNEL      UINT64_MAX

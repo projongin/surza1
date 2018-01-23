@@ -19,6 +19,7 @@
 
 #include "log.h"
 
+#include "common.h"
 
 
 
@@ -53,7 +54,10 @@ DWORD _fastcall disable_smi(void *p)
 
 
 //------------------
+unsigned msg_cnt = 0;
+unsigned msg_cnt_old = 0;
 void tmp_net_callback(net_msg_t* msg, uint64_t channel) {
+	msg_cnt++;
 	net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
 }
 
@@ -155,8 +159,7 @@ int  main(int argc, char * argv[])
 	time = RTKGetTime();
 	time_prev = time;
 
-	//---------------------
-
+	
 	while (true) {
 		WATCHDOG_UPDATE
 
@@ -168,6 +171,7 @@ int  main(int argc, char * argv[])
 
 
 
+		   extern volatile int net_test_heap_bufs;
 
 
 		    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -175,13 +179,16 @@ int  main(int argc, char * argv[])
 			 if (CLKTicksToSeconds(time) != CLKTicksToSeconds(time_prev)) {
 				 time_prev = time;
 
-				 printf("buf_pool available buf = %d\n", buf_pool_bufs_available(0));
+				 printf("buf = %d, n_con=%u, msg/sec=%u, heap_bufs=%d\n", buf_pool_bufs_available(0), net_connections(), msg_cnt-msg_cnt_old, atom_get_state(&net_test_heap_bufs));
+
+				 msg_cnt_old = msg_cnt;
+
 			 }
 
 			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-		// RTKDelay(CLKMilliSecsToTicks(50));
+		 RTKDelay(CLKMilliSecsToTicks(50));
 
 
 	 //============================================================================================================
