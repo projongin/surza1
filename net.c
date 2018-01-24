@@ -550,6 +550,10 @@ void net_main_queue_test() {
 	}
 }
 
+
+
+
+
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 static net_realtime_callback realtime_callback = NULL;
@@ -672,7 +676,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	//
 
 	
-	//CFG_TCP_SEND_WAIT_ACK = 0;
+	CFG_TCP_SEND_WAIT_ACK = 0;
 
 
 	CFG_ARP_TIMEOUT = 60;
@@ -680,7 +684,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	CFG_KA_RETRY = 4;
 	CFG_KA_TMO = 10;
 	CFG_TIMER_FREQ = 50;
-		
+	
 	//CFG_MAX_DELAY_ACK = 100;
 	
 	CFG_MAXRTO = 3000;
@@ -689,12 +693,16 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	CFG_REPORT_TMO = CFG_RETRANS_TMO / 2;
 	CFG_LASTTIME = 10;
 
+	
 
 	PRIOTASK_HI = NET_TCP_SERVER_PRIORITY + 1;
 	PRIOTASK_HIGHEST = NET_TCP_SERVER_PRIORITY + 2;
 	SIZESTACK_NORMAL = 0xffff;
 
-	
+	CFG_NUM_PACKETS0 = 1000;
+	CFG_NUM_PACKETS1 = 1000;
+	CFG_NUM_PACKETS2 = 1000;
+	CFG_NUM_PACKETS3 = 1000;
 	//--------------------------------------
 
 	res = xn_rtip_init();
@@ -1399,8 +1407,9 @@ static void RTKAPI net_tcp_server_func(void* param){
 				
 				
 				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;	
-				if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_NAGLE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
-				
+				//if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_NAGLE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
+				if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_DELAYED_ACK, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
+
 				
 				
 
@@ -1631,3 +1640,22 @@ net_err_t net_update() {
 }
 
 
+
+
+
+//!!!!-----------
+
+void net_test_queues(int* indi) {
+
+	indi[0] = NET_NODE_STACK_SIZE - net_queue_node_stack_ptr[NET_MAIN_QUEUE_RECV];
+	indi[1] = NET_NODE_STACK_SIZE - net_queue_node_stack_ptr[NET_MAIN_QUEUE_SEND];
+
+	int base = 2;
+	for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++, base += 2) {
+		indi[base] = RTKMessages(net_thread_state[i].read_mailbox);
+		indi[base + 1] = RTKMessages(net_thread_state[i].write_mailbox);
+	}
+
+}
+
+//------------

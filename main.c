@@ -172,7 +172,8 @@ int  main(int argc, char * argv[])
 
 
 		   extern volatile int net_test_heap_bufs;
-
+		   extern void net_test_queues(int* indi);
+		   int indi[20];
 
 		    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		     time = RTKGetTime();
@@ -182,6 +183,15 @@ int  main(int argc, char * argv[])
 				 printf("buf = %d, n_con=%u, msg/sec=%u, heap_bufs=%d\n", buf_pool_bufs_available(0), net_connections(), msg_cnt-msg_cnt_old, atom_get_state(&net_test_heap_bufs));
 
 				 msg_cnt_old = msg_cnt;
+
+				 net_test_queues(indi);
+
+				 printf("R%d S%u", indi[0], indi[1]);
+				 int base = 2;
+				 for (int i = 0; i < 5; i++, base+=2) {
+					 printf("  r%ds%d", indi[base], indi[base+1]);
+				 }
+				 printf("\n");
 
 			 }
 
