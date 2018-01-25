@@ -110,7 +110,7 @@ typedef struct {
 
 
 //максимальное количество сообщений  в очереди на отправку и получение дл€ каждого потока
-#define NET_THREAD_QUEUE_LENGTH   1000
+#define NET_THREAD_QUEUE_LENGTH   200
 
 //максимальное количество сообщений в общих очеред€х на отправку и получение
 #define NET_MAIN_QUEUE_LENGTH     (NET_THREAD_QUEUE_LENGTH*NET_MAX_CONNECTIONS_ALLOWED)
@@ -131,8 +131,8 @@ typedef struct {
 #define NET_MAX_NET_BUF_SIZE     (NET_MAX_MSG_DATA_LENGTH + NET_BUF_OVERHEAD)
 
 
-#define NET_BUF_SIZE           4096                          //размер буферов  в пуле буферов
-#define NET_BUF_POOL_SIZE      (NET_MAIN_QUEUE_LENGTH*5)     //размер пула буферов
+#define NET_BUF_SIZE           4096                              //размер буферов  в пуле буферов
+#define NET_BUF_POOL_SIZE      (NET_MAIN_QUEUE_LENGTH*3)         //размер пула буферов
 
 
 
@@ -156,9 +156,11 @@ bool net_buf_pool_init() {
 	return true;
 }
 
+#if 0
 //!!!!!--------
 volatile int net_test_heap_bufs = 0;
 //!!!!!!!!!!!!!
+#endif
 
 
 //получение нового буфера
@@ -185,9 +187,11 @@ net_buf_t* net_get_net_buf(size_t len) {
 		buf->buf_type = NET_BUF_TYPE_HEAP;
 		buf->buf_size = len;
 
+#if 0
 		//!!!!!!!--------
 		atom_inc(&net_test_heap_bufs);
 		//!!!!!!!!!!!
+#endif
 	}
 
 	return buf;
@@ -204,9 +208,11 @@ void net_free_net_buf(net_buf_t* buf) {
 	}
 	else if (buf->buf_type == NET_BUF_TYPE_HEAP) {
 		free(buf);
+#if 0
 		//!!!!!!!--------
 		atom_dec(&net_test_heap_bufs);
 		//!!!!!!!!!!!
+#endif
 	}
 	
 }
@@ -671,13 +677,12 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 
 
 
-	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	//---------------------------
 	//доп настройки
 	//
 
 	
 	CFG_TCP_SEND_WAIT_ACK = 0;
-
 
 	CFG_ARP_TIMEOUT = 60;
 	CFG_KA_INTERVAL = 10;
@@ -693,16 +698,15 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	CFG_REPORT_TMO = CFG_RETRANS_TMO / 2;
 	CFG_LASTTIME = 10;
 
-	
 
 	PRIOTASK_HI = NET_TCP_SERVER_PRIORITY + 1;
 	PRIOTASK_HIGHEST = NET_TCP_SERVER_PRIORITY + 2;
 	SIZESTACK_NORMAL = 0xffff;
 
-	CFG_NUM_PACKETS0 = 1000;
-	CFG_NUM_PACKETS1 = 1000;
-	CFG_NUM_PACKETS2 = 1000;
-	CFG_NUM_PACKETS3 = 1000;
+	CFG_NUM_PACKETS0 = 2000;
+	CFG_NUM_PACKETS1 = 2000;
+	CFG_NUM_PACKETS2 = 2000;
+	CFG_NUM_PACKETS3 = 2000;
 	//--------------------------------------
 
 	res = xn_rtip_init();
@@ -962,10 +966,6 @@ enum net_reader_states_t {
 
  
 
-/*!!!*******/
-volatile int mmm = 0;
-/*******/
-
 void net_reader_thread_func(void* params) {
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
@@ -998,8 +998,6 @@ void net_reader_thread_func(void* params) {
 
 		  case NET_READER_STATE_GET_BUF:   //получение буфера
 			       
-			       LOG_AND_SCREEN("label_0,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
-
 			       if (pool_buf==NULL) {
 					   pool_buf = net_get_net_buf(NET_BUF_SIZE);
 					   if (!pool_buf) {
@@ -1013,8 +1011,6 @@ void net_reader_thread_func(void* params) {
 				   bytes_read = 0;
 
 				   state = NET_READER_STATE_READ_SIZE;
-
-				   LOG_AND_SCREEN("label_1,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 			        
 			  break;
 
@@ -1023,13 +1019,8 @@ void net_reader_thread_func(void* params) {
 			      ret = recv(data->sock, data_ptr, bytes_left, 0);
 				  if (ret == SOCKET_ERROR || ret==0) {
 					  exit = true;
-					  /*!!!!*/
-					  mmm = 1;
-					  /*****/
 					  break;
 				  }
-
-				  LOG_AND_SCREEN("label_2,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				  bytes_read += ret;
 				  bytes_left -= ret;
@@ -1038,32 +1029,20 @@ void net_reader_thread_func(void* params) {
 				  if (bytes_read < 4)
 					  break;
 
-				  LOG_AND_SCREEN("label_3,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
-
 				  //хватает данных на определение длины сообщени€
 
 				  if (msg_size < sizeof(net_raw_msg_t) + sizeof(net_msg_t) + 4) {
 					  //если длина меньше минимально допустимой (не хватает даже на сообщение без данных), то выходим
 					  exit = true;
-					  /*!!!!*/
-					  mmm = 2;
-					  /*****/
 					  break;
 				  }
-
-				  LOG_AND_SCREEN("label_4,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				  buf_len = msg_size + NET_RAW_MSG_OFFSET;
 				  if (buf_len > NET_MAX_NET_BUF_SIZE) {
 					  //если длина превышает максимально допустимую длину сообщени€  - выходим
 					  exit = true;
-					  /*!!!!*/
-					  mmm = 3;
-					  /*****/
 					  break;
 				  }
-
-				  LOG_AND_SCREEN("label_5,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				  //выделение буфера из кучи, если длины буфера из пула недостаточно
 				  if (buf_len > NET_BUF_SIZE) {
@@ -1071,16 +1050,11 @@ void net_reader_thread_func(void* params) {
 					  //при неудаче выделени€ буфера выходим
 					  if (heap_buf == NULL) {
 						  exit = true;
-						  /*!!!!*/
-						  mmm = 4;
-						  /*****/
 						  break;
 					  }
 					  buf = heap_buf;
 				  }
 				  else buf = pool_buf;
-
-				  LOG_AND_SCREEN("label_6,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				  buf->net_msg.size = msg_size;
 				  data_ptr = (uint8_t*)&buf->net_msg.size + 4;
@@ -1095,24 +1069,14 @@ void net_reader_thread_func(void* params) {
 				   ret = recv(data->sock, data_ptr, bytes_left, 0);
 				   if (ret == SOCKET_ERROR) {
 					   exit = true;
-					   /*!!!!*/
-					   mmm = 5;
-					   /*****/
 					   break;
 				   }
-
-				   LOG_AND_SCREEN("label_7,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				   if (ret<=0 || ret>bytes_left) {
 					   exit = true;
-					   /*!!!!*/
-					   mmm = 6;
-					   /*****/
 					   break;
 				   }
-
-				   LOG_AND_SCREEN("label_8,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
-				   
+			   
 				   data_ptr += ret;
 				   bytes_left -= ret;
 
@@ -1123,30 +1087,18 @@ void net_reader_thread_func(void* params) {
 
 		  case NET_READER_STATE_CHECK_MSG:   //проверка сообщени€
 
-			       LOG_AND_SCREEN("label_9,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
-
 			        //если не проходит проверку - выходим
 			       if (memcmp(&buf->net_msg.label, data_ptr-4, 4)) {
 					   exit = true;
-					   /*!!!!*/
-					   mmm = 7;
-					   /*****/
 					   break;
 					}
-
-				   LOG_AND_SCREEN("label_10,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				   msg = (net_msg_t*)&buf->net_msg.msg_data;
 				   if (msg_size != sizeof(net_raw_msg_t) + sizeof(net_msg_t) + msg->size + 4) {
 					   //что-то не так с размерами сообщени€, выходим
 					   exit = true;
-					   /*!!!!*/
-					   mmm = 8;
-					   /*****/
 					   break;
 				   }
-
-				   LOG_AND_SCREEN("label_11,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 				   state = NET_READER_STATE_SAVE_MSG;
 
@@ -1154,16 +1106,12 @@ void net_reader_thread_func(void* params) {
 
 		  case NET_READER_STATE_SAVE_MSG:   //добавл€ем сообщение в очередь с проверкой ее забитости
 			         
-			         LOG_AND_SCREEN("label_12,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
-
 			         buf_type = buf->buf_type;
 			  
 			         if (RTKPutCond(data->read_mailbox, &buf) == FALSE) {
 						 RTKDelay(CLKMilliSecsToTicks(200));   //очередь забита, пробуем снова с задержкой
 						 break;
 					 }
-
-					 LOG_AND_SCREEN("label_13,  time=%d", CLKTicksToMilliSecs(RTKGetTime()));
 
 					 //сообщение успешно добавлено во входную очередь
 
@@ -1203,10 +1151,6 @@ enum net_writer_states_t {
 
 
 
-/*!!!*******/
-volatile int lll = 0;
-/*******/
-
 void net_writer_thread_func(void* params) {
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
@@ -1233,9 +1177,6 @@ void net_writer_thread_func(void* params) {
 				break;
 			if (res==TRUE && buf == NULL) {
 				exit = true;
-				/*!!!!*/
-				lll = 1;
-				/*****/
 				break;
 			}
 
@@ -1259,25 +1200,13 @@ void net_writer_thread_func(void* params) {
 			ret = net_send(data->sock, ptr, bytes_left);
 			if (ret == SOCKET_ERROR || ret>bytes_left) {
 				exit = true;
-				/*!!!!*/
-				lll = xn_getlasterror();
-				
-
-				printf("JOPA JOPA JOPA !!!   lll=%d,  sock=%d\n", lll, data->sock);
-				//RTKDelay(CLKMilliSecsToTicks(100));
-				/*****/
 				break;
 			}
 			
 			bytes_left -= ret;
 			ptr += ret;
 			
-			if (bytes_left == 0) {
-				/*!!!
-				ptr = (uint8_t*)&buf->net_msg;
-				bytes_left = (int)buf->net_msg.size;
-				*/
-				
+			if (bytes_left == 0) {			
 				net_free_net_buf(buf);
 				buf = NULL;
 				state = NET_WRITER_STATE_GET_MSG;				
@@ -1407,7 +1336,7 @@ static void RTKAPI net_tcp_server_func(void* param){
 				
 				
 				if (sock_opt = 1, setsockopt(thread_data->sock, SOL_SOCKET, SO_KEEPALIVE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;	
-				//if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_NAGLE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
+				if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_NAGLE, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
 				if (sock_opt = 0, setsockopt(thread_data->sock, SOL_SOCKET, SO_DELAYED_ACK, (PFCCHAR)&sock_opt, sizeof(sock_opt))) break;
 
 				
@@ -1642,7 +1571,7 @@ net_err_t net_update() {
 
 
 
-
+#if 0
 //!!!!-----------
 
 void net_test_queues(int* indi) {
@@ -1659,3 +1588,4 @@ void net_test_queues(int* indi) {
 }
 
 //------------
+#endif

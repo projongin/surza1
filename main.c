@@ -170,7 +170,7 @@ int  main(int argc, char * argv[])
 			net_update();
 
 
-
+#if 0
 		   extern volatile int net_test_heap_bufs;
 		   extern void net_test_queues(int* indi);
 		   int indi[20];
@@ -198,7 +198,8 @@ int  main(int argc, char * argv[])
 			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-		 RTKDelay(CLKMilliSecsToTicks(50));
+		 //RTKDelay(CLKMilliSecsToTicks(50));
+#endif
 
 
 	 //============================================================================================================
