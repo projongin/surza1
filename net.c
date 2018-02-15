@@ -341,7 +341,7 @@ typedef struct net_queue_node_tt {
 	void *ptr;
 } net_queue_node_t;
 
-#define NET_QUEUE_PRIORITY_NUM  (NET_PRIORITY_HIGHEST+1)     //количество приоритетов
+#define NET_QUEUE_PRIORITY_NUM  (NET_PRIORITY_BACKGROUND+1)     //количество приоритетов
 #define NET_MAIN_QUEUE_NUM      (NET_MAIN_QUEUE_RECV+1)      //количество общих очередей
 
 
@@ -455,7 +455,7 @@ void* net_remove_from_main_queue(net_main_queue_type_t queue, net_msg_priority_t
 void* net_remove_from_main_queue_by_priority(net_main_queue_type_t queue) {
 	void* ptr=NULL;
 
-	for (int pr = NET_QUEUE_PRIORITY_NUM - 1; pr >= 0; pr--) {
+    for (int pr = 0; pr<NET_QUEUE_PRIORITY_NUM; pr++) {
 		ptr = net_remove_from_main_queue(queue, pr);
 		if (ptr) return ptr;
 	}
