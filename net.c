@@ -58,14 +58,31 @@
 
 
 //приоритет потока TCP сервера
-#define NET_TCP_SERVER_PRIORITY    (RTKConfig.MainPriority+3)
+#define NET_TCP_SERVER_PRIORITY    (RTKConfig.MainPriority+5)
 
 //приоритет записывающего потока
-#define NET_TCP_WRITER_PRIORITY    (RTKConfig.MainPriority+2)
+#define NET_TCP_WRITER_PRIORITY_HIGH    (RTKConfig.MainPriority+4)
+#define NET_TCP_WRITER_PRIORITY_LOW     (RTKConfig.MainPriority+2)
 
 //приоритет читающего потока
-#define NET_TCP_READER_PRIORITY    (RTKConfig.MainPriority+1)
+#define NET_TCP_READER_PRIORITY_HIGH    (RTKConfig.MainPriority+3)
+#define NET_TCP_READER_PRIORITY_LOW     (RTKConfig.MainPriority+1)
 
+
+
+
+ //типы сообщений
+enum net_special_msg_types_t{
+	NET_SPECIAL_MSG_TYPE_LOOPBACK = 0,
+	NET_SPECIAL_MSG_TYPE_WATCHDOG,
+	NET_SPECIAL_MSG_TYPE_SUBSCRIBE,
+	NET_SPECIAL_MSG_TYPE_UNSUBSCRIBE,
+	NET_SPECIAL_MSG_TYPE_PID,
+	NET_SPECIAL_MSG_TYPE_CHANNEL_PRIORITY,
+	//add new special types here
+
+	NET_SPECIAL_MSG_TYPE_MAX_NUM
+};
 
 
 
@@ -283,7 +300,7 @@ size_t net_msg_buf_get_available_space(const net_msg_t* buf) {
 
 
 
-//стетевые настройки
+//сетевые настройки
 
 typedef struct {
 	byte LocalIP[4];
@@ -1355,25 +1372,25 @@ static void RTKAPI net_tcp_server_func(void* param){
 				break;
 			}
 
-			// запуск новых потоков чтения записи
+// запуск новых потоков чтения записи
 
-			//формируем номер канала на основе ip адреса клиента, его порта + инкремент предыдущего подключения (чтоб при повторном быстром подключении того же клиента  сообщения из входной очереди, предназначенные для  старого подключения не попали в новое из-за совпадения ip и порта)
-			u64 = remote.sin_addr.s_un.S_addr;
-			u64 <<= 16;
-			u64 += remote.sin_port;
-			u64 <<= 16;
-			u16 = ((thread_data->channel+1) & 0xffff);
-			u64 += u16;
-			thread_data->channel = u64;
+//формируем номер канала на основе ip адреса клиента, его порта + инкремент предыдущего подключения (чтоб при повторном быстром подключении того же клиента  сообщения из входной очереди, предназначенные для  старого подключения не попали в новое из-за совпадения ip и порта)
+u64 = remote.sin_addr.s_un.S_addr;
+u64 <<= 16;
+u64 += remote.sin_port;
+u64 <<= 16;
+u16 = ((thread_data->channel + 1) & 0xffff);
+u64 += u16;
+thread_data->channel = u64;
 
-			atom_set_state(&thread_data->thread_cnt_atomic, 2);
-
-
-			thread_data->writer_handle = RTKRTLCreateThread(net_writer_thread_func, NET_TCP_WRITER_PRIORITY, 200000, TF_NO_MATH_CONTEXT, thread_data, net_writer_thread_name);
-			thread_data->reader_handle = RTKRTLCreateThread(net_reader_thread_func, NET_TCP_READER_PRIORITY, 200000, TF_NO_MATH_CONTEXT, thread_data, net_reader_thread_name);
+atom_set_state(&thread_data->thread_cnt_atomic, 2);
 
 
-			break;
+thread_data->writer_handle = RTKRTLCreateThread(net_writer_thread_func, NET_TCP_WRITER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_writer_thread_name);
+thread_data->reader_handle = RTKRTLCreateThread(net_reader_thread_func, NET_TCP_READER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_reader_thread_name);
+
+
+break;
 
 
 		case NET_TCP_SERVER_CLOSE:
@@ -1395,7 +1412,7 @@ static void RTKAPI net_tcp_server_func(void* param){
 
 void net_connection_control_func() {
 
-   //проверка состояния читающих\записывающих потоков
+	//проверка состояния читающих\записывающих потоков
 
 	if (net_connections() <= NET_MAX_CONNECTIONS_ALLOWED)
 		for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
@@ -1450,12 +1467,36 @@ void net_read_recv_queues() {
 				net_buf = NULL;
 				res = RTKGetCond(data->read_mailbox, &net_buf);
 				if (res && net_buf) {
-					// добавить сообщение в общую очередь приема
-					net_buf->net_msg.priority = (net_buf->net_msg.priority < NET_QUEUE_PRIORITY_NUM ? net_buf->net_msg.priority : NET_PRIORITY_BACKGROUND);
-					net_buf->channel = data->channel;
-					if (net_add_to_main_queue(NET_MAIN_QUEUE_RECV, net_buf->net_msg.priority, net_buf->channel, false, net_buf) < 0) {
+					net_msg_t* msg = (net_msg_t*)net_buf->net_msg.msg_data;
+					//проверка на сообщения специального типа
+					if (msg->type <= (uint8_t)NET_SPECIAL_MSG_TYPE_MAX_NUM) {
+
+						if (msg->type == (uint8_t)NET_SPECIAL_MSG_TYPE_CHANNEL_PRIORITY) {
+							if (msg->subtype == 0) {
+								RTKSetPriority(data->writer_handle, NET_TCP_WRITER_PRIORITY_HIGH);
+								RTKSetPriority(data->reader_handle, NET_TCP_READER_PRIORITY_HIGH);
+							}
+							else if (msg->subtype == 1) {
+								RTKSetPriority(data->writer_handle, NET_TCP_WRITER_PRIORITY_LOW);
+								RTKSetPriority(data->reader_handle, NET_TCP_READER_PRIORITY_LOW);
+							}
+								
+						}
+
+
 						net_free_net_buf(net_buf);
-					}		
+
+					}
+					else {
+
+						// добавить сообщение в общую очередь приема
+						net_buf->net_msg.priority = (net_buf->net_msg.priority < NET_QUEUE_PRIORITY_NUM ? net_buf->net_msg.priority : NET_PRIORITY_BACKGROUND);
+						net_buf->channel = data->channel;
+						if (net_add_to_main_queue(NET_MAIN_QUEUE_RECV, net_buf->net_msg.priority, net_buf->channel, false, net_buf) < 0) {
+							net_free_net_buf(net_buf);
+						}
+
+					}
 				}
 			} while (res == TRUE);
 

@@ -80,6 +80,7 @@ RTFDevice RTFDeviceList[] = {
 	void __export Init(void)
 #endif
 	{
+
 		RTSetFlags(RT_MM_VIRTUAL | RT_CLOSE_FIND_HANDLES, 1);
 		//RTSetFlags( RT_DBG_OUT_TO_HOST, 1 );
 		RTSetFlags(RT_DBG_OUT_NONE, 1);
@@ -89,4 +90,6 @@ RTFDevice RTFDeviceList[] = {
 		RTCMOSExtendHeap();            // get as much memory as we can
 		RTCMOSSetSystemTime();         // get the right date and time
 									   // RTEmuInit();                   // only if you need it
+		
 	}
+	

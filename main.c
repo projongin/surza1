@@ -58,6 +58,7 @@ unsigned msg_cnt = 0;
 unsigned msg_cnt_old = 0;
 void tmp_net_callback(net_msg_t* msg, uint64_t channel) {
 	msg_cnt++;
+	LOG_AND_SCREEN("MSG channel=%016llX   type=%u, subtype=%u,  data_size=%u bytes", channel, msg->type, msg->subtype, msg->size);
 	net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
 }
 
@@ -76,12 +77,13 @@ int  main(int argc, char * argv[])
 #endif
 
 	// конфигурация RtKernel
+
 	RTKConfig.DefaultIntStackSize = 1024 * 16;
 	RTKConfig.DefaultTaskStackSize = 1024*1024;
 	RTKConfig.Flags |= RF_PREEMPTIVE;  //включаем преемптивную многозадачность
 	RTKernelInit(0);
 	//-------------------------------------------------
-
+	
 
 	CLKSetTimerIntVal(2000);          // 2 millisecond tick
 	RTKDelay(1);
@@ -90,13 +92,12 @@ int  main(int argc, char * argv[])
 
 	RTKDisableIRQ(1);
 
-
+	
 
 	//==============================================
 	// инициализация общего системного
 	//==============================================
 	srand(time(NULL) % UINT_MAX);
-	
 	
 
 	//==============================================
@@ -105,7 +106,8 @@ int  main(int argc, char * argv[])
 	//==============================================
 	// инициализация сетевого обмена, буферов и т.п.
 	//==============================================
-	LOG_AND_SCREEN("Surza start");
+	LOG_AND_SCREEN("Surza start");	
+
 	bool init_ok;
 	do {
 

@@ -25,9 +25,8 @@
 
 
 
-
 //номер канала для отправки всем подключенным клиентам
-#define NET_BROADCAST_CHANNEL      UINT64_MAX
+#define NET_BROADCAST_CHANNEL          UINT64_MAX
 
 
 

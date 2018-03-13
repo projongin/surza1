@@ -18,7 +18,7 @@ extern char common_str[1024];
 
 
 
-#define BLOCK_LOG_AND_SCREEN
+#define BLOCK_LOG_AND_SCREEN_
 
 
 #ifndef BLOCK_LOG_AND_SCREEN
