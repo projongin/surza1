@@ -176,17 +176,23 @@
   <ItemGroup>
     <ClCompile Include="boof_pool.c" />
     <ClCompile Include="common.c" />
+    <ClCompile Include="filesystem.c" />
     <ClCompile Include="init.c" />
     <ClCompile Include="log.c" />
+    <ClCompile Include="logic_init.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="net.c" />
+    <ClCompile Include="param_tree.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="buf_pool.h" />
     <ClInclude Include="common.h" />
+    <ClInclude Include="filesystem.h" />
     <ClInclude Include="global_defines.h" />
     <ClInclude Include="log.h" />
+    <ClInclude Include="logic_init.h" />
     <ClInclude Include="net.h" />
+    <ClInclude Include="param_tree.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

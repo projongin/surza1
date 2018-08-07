@@ -1371,25 +1371,25 @@ static void RTKAPI net_tcp_server_func(void* param){
 				break;
 			}
 
-// запуск новых потоков чтения записи
-
-//формируем номер канала на основе ip адреса клиента, его порта + инкремент предыдущего подключения (чтоб при повторном быстром подключении того же клиента  сообщения из входной очереди, предназначенные для  старого подключения не попали в новое из-за совпадения ip и порта)
-u64 = remote.sin_addr.s_un.S_addr;
-u64 <<= 16;
-u64 += remote.sin_port;
-u64 <<= 16;
-u16 = ((thread_data->channel + 1) & 0xffff);
-u64 += u16;
-thread_data->channel = u64;
-
-atom_set_state(&thread_data->thread_cnt_atomic, 2);
-
-
-thread_data->writer_handle = RTKRTLCreateThread(net_writer_thread_func, NET_TCP_WRITER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_writer_thread_name);
-thread_data->reader_handle = RTKRTLCreateThread(net_reader_thread_func, NET_TCP_READER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_reader_thread_name);
-
-
-break;
+            // запуск новых потоков чтения записи
+            
+            //формируем номер канала на основе ip адреса клиента, его порта + инкремент предыдущего подключения (чтоб при повторном быстром подключении того же клиента  сообщения из входной очереди, предназначенные для  старого подключения не попали в новое из-за совпадения ip и порта)
+            u64 = remote.sin_addr.s_un.S_addr;
+            u64 <<= 16;
+            u64 += remote.sin_port;
+            u64 <<= 16;
+            u16 = ((thread_data->channel + 1) & 0xffff);
+            u64 += u16;
+            thread_data->channel = u64;
+            
+            atom_set_state(&thread_data->thread_cnt_atomic, 2);
+            
+            
+            thread_data->writer_handle = RTKRTLCreateThread(net_writer_thread_func, NET_TCP_WRITER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_writer_thread_name);
+            thread_data->reader_handle = RTKRTLCreateThread(net_reader_thread_func, NET_TCP_READER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_reader_thread_name);
+            
+            
+            break;
 
 
 		case NET_TCP_SERVER_CLOSE:
