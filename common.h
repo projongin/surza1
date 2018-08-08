@@ -36,3 +36,21 @@ void atom_sub(volatile int *num, int val);
 // проверка сработавшего таймаута (start - время установки, stop - время срабатывания, time - текущее время)
 bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time);
 
+
+
+typedef struct {
+	bool base_init;
+	bool settings_init;
+	bool net_init;
+	bool logic_init;
+} init_flags_t;
+
+extern init_flags_t init_flags;
+
+void common_init();
+
+
+void wdt_init();
+extern inline void wdt_update();
+
+void reboot();

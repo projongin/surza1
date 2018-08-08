@@ -16,10 +16,9 @@
 
 #include "buf_pool.h"
 #include "net.h"
-
 #include "log.h"
-
 #include "common.h"
+#include "logic.h"
 
 
 
@@ -50,7 +49,7 @@ DWORD _fastcall disable_smi(void *p)
 }
 
 
-#define WATCHDOG_UPDATE  ;
+#define WATCHDOG_UPDATE()  wdt_update()
 
 
 //------------------
@@ -79,7 +78,7 @@ int  main(int argc, char * argv[])
 	// конфигурация RtKernel
 
 	RTKConfig.DefaultIntStackSize = 1024 * 16;
-	RTKConfig.DefaultTaskStackSize = 1024*1024;
+	RTKConfig.DefaultTaskStackSize = 1024 * 1024;
 	RTKConfig.Flags |= RF_PREEMPTIVE;  //включаем преемптивную многозадачность
 	RTKernelInit(0);
 	//-------------------------------------------------
@@ -99,13 +98,15 @@ int  main(int argc, char * argv[])
 	//==============================================
 	srand(time(NULL) % UINT_MAX);
 	
-
-	//==============================================
-
 	
+	common_init();  //инициализация базовых общих переменных
 	//==============================================
-	// инициализация сетевого обмена, буферов и т.п.
-	//==============================================
+
+
+
+	//========================================================================================
+	// инициализация вспомогательного функционала (буферов, номера запуска и т.п.
+	//========================================================================================
 	LOG_AND_SCREEN("Surza start");	
 
 	bool init_ok;
@@ -118,33 +119,73 @@ int  main(int argc, char * argv[])
 		}
 
 		
-		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, tmp_net_realtime_callback)) {
-			LOG_AND_SCREEN("net_init()  fail!");
-			init_ok = false;
-			break;
-		}
-		
 
 	} while (0);
 
+	init_flags.base_init = init_ok;
 
 
+	//========================================================================================
+	// чтение файлов настроек
+	//========================================================================================
+	if (init_flags.base_init) {
+		init_flags.settings_init = (read_settings() >= 0) ? true : false;
+		if (init_flags.settings_init) {
+			LOG_AND_SCREEN("Read settings file OK!");
+		}
+		else {
+			LOG_AND_SCREEN("Settings file ERROR!");
+		}
+	}
+
+	//========================================================================================
+	// инициализация сети
+	//========================================================================================
+	if (init_flags.base_init) {
+		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, tmp_net_realtime_callback)) {
+			LOG_AND_SCREEN("net_init()  fail!");
+		}
+		else {
+			LOG_AND_SCREEN("net_init()  ok!");
+			init_flags.net_init = true;
+		}
+	}
+
+
+	//========================================================================================
+	// инициализация логики, в том числе периферии (ADC, DIC, FIU)
+	//========================================================================================
+	if (init_flags.base_init && init_flags.settings_init && init_flags.net_init) {
+		if (logic_init() < 0) {
+			LOG_AND_SCREEN("Logic init fail!");
+		} else {
+			LOG_AND_SCREEN("Logic init OK!");
+			init_flags.logic_init = true;
+		}
+	}
+
+
+
+#if 0
 	if (!init_ok) {
 		//обновляем собаку несколько секунд, чтоб успеть прочитать сообщения на экране
 		for (int i = 0; i < 10; i++) {
-			WATCHDOG_UPDATE
+			WATCHDOG_UPDATE();
 			RTKDelay(CLKMilliSecsToTicks(10));
 		}
 		while (true) { RTKDelay(1000); }
 	}  else {
 		LOG_AND_SCREEN("init()  ok");
 	}
+#endif
 
+	//собака
+	wdt_init();
 
 
 	//запуск в работу матядра и сетевого обмена
-
-	net_start();
+	if(init_flags.net_init)
+		net_start();
 
 
 	//---------------------------------
@@ -163,7 +204,7 @@ int  main(int argc, char * argv[])
 
 	
 	while (true) {
-		WATCHDOG_UPDATE
+		WATCHDOG_UPDATE();
 
 			//============================================================================================================
 			// основной цикл работы

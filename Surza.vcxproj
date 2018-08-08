@@ -79,6 +79,7 @@
       <CompileAs>CompileAsC</CompileAs>
       <ShowIncludes>false</ShowIncludes>
       <UseFullPaths>false</UseFullPaths>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
     <Midl>
       <TypeLibraryName>.\Debug\Surza.tlb</TypeLibraryName>
@@ -176,10 +177,11 @@
   <ItemGroup>
     <ClCompile Include="boof_pool.c" />
     <ClCompile Include="common.c" />
+    <ClCompile Include="crc32.cpp" />
     <ClCompile Include="filesystem.c" />
     <ClCompile Include="init.c" />
     <ClCompile Include="log.c" />
-    <ClCompile Include="logic_init.c" />
+    <ClCompile Include="logic.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="net.c" />
     <ClCompile Include="param_tree.c" />
@@ -187,11 +189,13 @@
   <ItemGroup>
     <ClInclude Include="buf_pool.h" />
     <ClInclude Include="common.h" />
+    <ClInclude Include="crc32.h" />
     <ClInclude Include="filesystem.h" />
     <ClInclude Include="global_defines.h" />
     <ClInclude Include="log.h" />
-    <ClInclude Include="logic_init.h" />
+    <ClInclude Include="logic.h" />
     <ClInclude Include="net.h" />
+    <ClInclude Include="net_messages.h" />
     <ClInclude Include="param_tree.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

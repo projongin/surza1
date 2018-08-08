@@ -1,4 +1,12 @@
 
+#include "Rtk32.h"
+#include <stdbool.h>
+
+#include "global_defines.h"
+#include "common.h"
+
+
+
 //=============================================
 // атомарные операции
 //=============================================
@@ -80,11 +88,6 @@ void atom_sub(volatile int *num, int val)
 //------------------------------------------------------------------------------
 
 
-
-#include "Rtk32.h"
-#include <stdbool.h>
-
-
 // определение сработал ли таймаут  с учетом природы типа RTKTime в РТОС32 (пока так, потом можно поискать более красивые варианты)
 bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time) {
 	if (start >= 0) {
@@ -114,4 +117,47 @@ bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time) {
 	}
 
 	return false;
+}
+
+
+
+
+
+//----------------------------------------------------------
+init_flags_t init_flags;
+
+void common_init() {
+
+	init_flags.base_init = false;
+	init_flags.settings_init = false;
+	init_flags.net_init = false;
+	init_flags.logic_init = false;
+
+}
+
+//----------------------------------------------------------
+
+bool allow_update;
+
+void wdt_init() {
+	allow_update = true;
+#ifdef WDT_EN
+	RTOut(0x20C, 0x01); // WDT On
+#endif
+}
+
+inline void wdt_update() {
+#ifdef WDT_EN
+	if(allow_update)
+		RTIn(0x20C);
+#endif
+}
+
+
+void reboot() {
+	allow_update = false;
+#ifndef WDT_EN
+	RTOut(0x20C, 0x01);
+#endif
+	while (true);
 }

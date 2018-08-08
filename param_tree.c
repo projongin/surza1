@@ -1,5 +1,6 @@
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "param_tree.h"
 
@@ -206,7 +207,7 @@ param_tree_node_t* ParamTree_Find(param_tree_node_t* node, char* name, enum Para
 
 	while (n) {
 		if (((s_type == PARAM_TREE_SEARCH_NODE && n->value == NULL) || (s_type == PARAM_TREE_SEARCH_ITEM && n->value != NULL) || s_type == PARAM_TREE_SEARCH_ANY)
-			&& strcmp(n->name, name) == 0)
+			&& (strcmp(n->name, name) == 0) )
 			break;
 		n = n->next;
 	}
@@ -229,11 +230,10 @@ param_tree_node_t* ParamTree_NextItem(param_tree_node_t* node) {
 
 	if (node && node->value) {
 		node = node->next;
-		if (node)
-			return (node->value) ? node : NULL;
-		else
-			return NULL;
+		if (node && node->value)
+			return node;
 	}
 
+	return NULL;
 }
 
