@@ -155,7 +155,7 @@ int  main(int argc, char * argv[])
 	//========================================================================================
 	// инициализация логики, в том числе периферии (ADC, DIC, FIU)
 	//========================================================================================
-	if (init_flags.base_init && init_flags.settings_init && init_flags.net_init) {
+	if (init_flags.base_init && init_flags.net_init) {
 		if (logic_init() < 0) {
 			LOG_AND_SCREEN("Logic init fail!");
 		} else {

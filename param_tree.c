@@ -58,6 +58,8 @@ static char* set_name_value(char** name, char** value, char* ptr) {
 				break;
 			}
 		}
+		else
+			ptr++;
 	}
 
 	return ptr;
@@ -130,7 +132,7 @@ static char* NodeAddItems(param_tree_node_t* node, char* str) {
 	}
 
 
-	return str;
+	return ptr;
 }
 
 
@@ -152,7 +154,7 @@ int ParamTree_Make(char* data, unsigned size) {
 	unsigned i = 0;
 
 	while (i<size)
-		if (data[i] == '\n')
+		if (data[i++] == '\n')
 			str_num++;
 
 
@@ -182,6 +184,7 @@ int ParamTree_Make(char* data, unsigned size) {
 	if (offset) {
 
 		node_mem = new_node_mem;
+		ParamTreeMainNode.child = node_mem;
 
 		param_tree_node_t* node_ptr = node_mem;
 		for (i = 0; i<new_item_num; i++, node_ptr++) {
@@ -194,7 +197,6 @@ int ParamTree_Make(char* data, unsigned size) {
 	}
 
 	return 0;
-
 }
 
 

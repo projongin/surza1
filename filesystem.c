@@ -37,11 +37,14 @@ int filesystem_read_file_fragments(char* filename, filesystem_fragment_t* fragme
 		n++;
 	}
 
+	n = 0;
 
 	while (ok &&  n<num) {
 
 		if (fragments[n].size == 0) {
-			//нужен весь файл -	определ€ю длину файла
+
+			//определ€ю все оставшиес€ в файле данные
+
 			RTFFileInfoEx file_info;
 
 			if (RTFGetFileInfoEx(f_handle, &file_info, 0) != RTF_NO_ERROR) {
@@ -49,7 +52,7 @@ int filesystem_read_file_fragments(char* filename, filesystem_fragment_t* fragme
 				continue;
 			}
 
-			fragments[n].size = file_info.FileSize.u.LowPart;
+			fragments[n].size = file_info.FileSize.u.LowPart - file_info.FilePos.u.LowPart;
 		}
 
 		fragments[n].pointer = malloc(fragments[n].size);
@@ -105,7 +108,7 @@ int filesystem_write_file_fragments(char* filename, const filesystem_fragment_t*
 
 	RTFHANDLE f_handle;
 
-	f_handle = RTFOpen(filename, RTF_CREATE | RTF_READ_WRITE);
+	f_handle = RTFOpen(filename, RTF_CREATE | RTF_CREATE_ALWAYS | RTF_READ_WRITE);
 	if (f_handle < 0)
 		return false;
 
