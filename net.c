@@ -17,7 +17,7 @@
 
 #include "common.h"
 #include "log.h"
-
+#include "param_tree.h"
 
 
 /*
@@ -306,9 +306,9 @@ typedef struct {
 	byte NetMask[4];
 	byte DefaultGateway[4];
 	byte DNSServer[4];
-	byte RemoteIP[4];
+//	byte RemoteIP[4];
 	uint16_t LocalPort;
-	uint16_t RemotePort;
+//	uint16_t RemotePort;
 } net_settings_t;
 
 
@@ -324,18 +324,66 @@ static const net_settings_t net_settings_default = {
 	{ 255, 255, 255,  0 },     //NetMask
 	{ 192, 168,  5,   1 },     //DefaultGateway
 	{ 192, 168,  5,   1 },     //DNSServer
-    { 192, 168,  5,  21 },     //RemoteIP
-	10020,                     //Local port  (TCP server port)
-	10010                      //Remote port
+    //{ 192, 168,  5,  21 },     //RemoteIP
+	10020                     //Local port  (TCP server port)
+	//10010                      //Remote port
 };
 
 
-//загрузка сетевых настроек из файла
+//загрузка сетевых настроек из дерева настроек
 bool net_load_settings() {
 
-	//тут доделать считывание сетевых настроек из файла
+	//net_settings_t net_settings;
 
-	return false;
+	if (!init_flags.settings_init)
+		return false;
+
+	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	param_tree_node_t* item;
+
+	//беру только адрес и порт. ќстальное все оставл€ю по-умолчанию 
+
+	item = ParamTree_Find(node, "IP", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	//IP
+	unsigned val;
+	if (sscanf(item->value, "%u", &val) <= 0)
+		return false;
+
+	for (int i = 3; i >= 0; i--){
+		net_settings.LocalIP[i] = (byte)(val & 0xff);
+		val >>= 8;
+	}
+	
+	//PORT
+	item = ParamTree_Find(node, "PORT", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf(item->value, "%u", &val) <= 0)
+		return false;
+
+	if (val > 0xffff)
+		return false;
+
+	net_settings.LocalPort = (uint16_t) val;
+
+
+	//маска всегда 255.255.255.0
+	memcpy(net_settings.NetMask, net_settings_default.NetMask, 4);
+
+	//IP адреса шлюза по-умолчанию и ƒЌ— беру от заданного IP
+	memcpy(net_settings.DefaultGateway, net_settings_default.LocalIP, 4);
+	memcpy(net_settings.DNSServer, net_settings_default.LocalIP, 4);
+	net_settings.DefaultGateway[3] = 1;
+	net_settings.DNSServer[3] = 1;
+	
+	return true;
 }
 
 
