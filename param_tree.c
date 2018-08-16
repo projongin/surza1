@@ -153,7 +153,25 @@ int ParamTree_Make(char* data, unsigned size) {
 	unsigned str_num = 0;
 	unsigned i = 0;
 
-	while (i<size)
+	//remove all utf8 characters after first occurence of characeter with code > 127
+	while (i < size) {
+		if ((unsigned char)data[i] > 127) {
+			data[i] = '\0';
+			break;
+		}
+		i++;
+	}
+
+	//realloc data
+	if (i < size) {
+		void* new_data = realloc(data, i);
+		if (new_data)
+			data = new_data;
+		size = i;
+	}
+
+	i = 0;
+	while (i < size)
 		if (data[i++] == '\n')
 			str_num++;
 
@@ -178,7 +196,7 @@ int ParamTree_Make(char* data, unsigned size) {
 	void* new_node_mem = realloc(node_mem, new_item_num * sizeof(param_tree_node_t));
 
 	if (!new_node_mem)
-		return -1;
+		return 0;
 
 	unsigned offset = (unsigned)new_node_mem - (unsigned)node_mem;   //  (!!!) ISO/IEC 9899:201x :  6.5.6 - 9 (substruction of pointers), 6.5.8, 6.5.9.    Can't compare pointers of different mallocs directly!!!
 	if (offset) {

@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "logic.h"
 #include "net.h"
@@ -15,7 +16,6 @@
 
 
 #define SETTINGS_FILENAME  "settings.bin"
-#define STRINGS_FILENAME   "strings.bin"
 
 
 #pragma pack(push)
@@ -24,7 +24,6 @@ typedef struct {
 	uint32_t size;            //размер данных
 	uint32_t crc32;           //контрольна€ сумма по data[size]
 	uint8_t  hash[16];        //MD5 хэш по data[size]
-	uint8_t  paired_hash[16]; //MD5 хэш по data[size] дл€ парного файла (настройки\строки)
 	// data[size]
 } settings_file_header_t;
 #pragma pack(pop)
@@ -42,13 +41,13 @@ static char* settings_data_ptr = NULL;
 static bool check_settings_msg(msg_type_settings_t* msg, unsigned size) {
 
 
-	if (!crc32_check((char*)(&msg->crc32+1), msg->data1_offset + msg->bytes1 - 4, msg->crc32)) {
-		LOG_AND_SCREEN("Settings file bad crc32!");
+	if (size < sizeof(msg_type_settings_t) || size < msg->data_offset + msg->bytes) {
+		LOG_AND_SCREEN("Settings file incorrect data!");
 		return false;
 	}
 
-	if (msg->data1_offset < msg->data2_offset + msg->bytes2) {
-		LOG_AND_SCREEN("Settings file incorrect data & offset fields!");
+	if (!crc32_check((char*)(&msg->crc32+1), msg->data_offset + msg->bytes - 4, msg->crc32)) {
+		LOG_AND_SCREEN("Settings file bad crc32!");
 		return false;
 	}
 
@@ -74,15 +73,14 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 	settings_file_header_t header;
 	filesystem_fragment_t fragments[2];
 
-	header.size = s_msg->bytes1;
-	header.crc32 = crc32((char*)s_msg+s_msg->data1_offset, s_msg->bytes1);
-	memcpy(&header.hash, &s_msg->md5_hash1, 16);
-	memcpy(&header.paired_hash, &s_msg->md5_hash2, 16);
+	header.size = s_msg->bytes;
+	header.crc32 = crc32((char*)s_msg+s_msg->data_offset, s_msg->bytes);
+	memcpy(&header.hash, &s_msg->md5_hash, 16);
 	
 	fragments[0].pointer = (char*) &header;
 	fragments[0].size = sizeof(header);
-	fragments[1].pointer = (char*)s_msg + s_msg->data1_offset;
-	fragments[1].size = s_msg->bytes1;
+	fragments[1].pointer = (char*)s_msg + s_msg->data_offset;
+	fragments[1].size = s_msg->bytes;
 
 	if (!filesystem_set_current_dir("C:\\") < 0)
 		return;
@@ -90,21 +88,115 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 	if (filesystem_write_file_fragments(SETTINGS_FILENAME, fragments, 2) < 0)
 		return;
 
-	header.size = s_msg->bytes2;
-	header.crc32 = crc32((char*)s_msg + s_msg->data2_offset, s_msg->bytes2);
-	memcpy(&header.hash, &s_msg->md5_hash2, 16);
-	memcpy(&header.paired_hash, &s_msg->md5_hash1, 16);
-
-	fragments[1].pointer = (char*)s_msg + s_msg->data2_offset;
-	fragments[1].size = s_msg->bytes2;
-
-	if (filesystem_write_file_fragments(STRINGS_FILENAME, fragments, 2) < 0) {
-		filesystem_delete_file(SETTINGS_FILENAME);
-		return;
-	}
     
 	LOG_AND_SCREEN("Reboot...");
 	reboot();
+}
+
+
+void settings_request_callback(net_msg_t* msg, uint64_t channel) {
+
+	if (msg->size < sizeof(msg_type_settings_request_t))
+		return;
+
+	msg_type_settings_t* s_msg;
+
+	if (!init_flags.settings_init || !settings_header) {
+
+		
+		if (net_msg_buf_get_available_space(msg) < sizeof(msg_type_settings_t)) {
+			msg = net_get_msg_buf(sizeof(msg_type_settings_t));
+			if (!msg)
+				return;
+		}
+
+		s_msg = (msg_type_settings_t*) &msg->data[0];
+		s_msg->bytes = 0;
+		s_msg->data_offset = sizeof(msg_type_settings_t);
+		memset(s_msg->md5_hash, 0, 16);
+		s_msg->crc32 = crc32((char*)&s_msg->crc32 + 4, sizeof(msg_type_settings_t) - 4);
+
+		msg->size = sizeof(msg_type_settings_t);
+		msg->subtype = 0;
+		msg->type = (uint8_t)NET_MSG_SURZA_SETTINGS;
+
+		net_send_msg(msg, NET_PRIORITY_HIGH, channel);
+
+		return;
+	}
+
+	msg_type_settings_request_t* request = (msg_type_settings_request_t*) &msg->data[0];
+	
+	bool any = true;
+	for(int i=0; i<16; i++)
+		if (request->md5_hash[i]) {
+			any = false;
+			break;
+		}
+
+	if (!any || memcmp(request->md5_hash, settings_header->hash, 16))
+		return;
+
+	
+
+	//чтение файла настроек
+
+	if (!filesystem_set_current_dir("C:\\") < 0) return;
+	
+	filesystem_fragment_t fragments[2];
+
+	fragments[0].size = sizeof(settings_file_header_t);
+	fragments[1].size = 0;
+
+	if (filesystem_read_file_fragments(SETTINGS_FILENAME, fragments, 2) < 0) return;
+
+	settings_file_header_t* s_header = (settings_file_header_t*)fragments[0].pointer;
+	char* s_data_ptr = fragments[1].pointer;
+
+	//проверка считанных данных
+	if (!s_data_ptr 
+		|| !s_header
+		|| s_header->size != fragments[1].size
+		|| !crc32_check(s_data_ptr, s_header->size, s_header->crc32)) {
+		if(s_data_ptr)
+			free(s_data_ptr);
+		if(s_header)
+			free(s_header);
+		return;
+	}
+
+
+	//заполн€ю сообщение им отправл€ю
+
+	unsigned size = sizeof(msg_type_settings_t) + s_header->size;
+
+	while (true) {
+
+		if (net_msg_buf_get_available_space(msg) < size) {
+			msg = net_get_msg_buf(size);
+			if (!msg)
+				break;;
+		}
+
+		s_msg = (msg_type_settings_t*) &msg->data;
+		s_msg->bytes = s_header->size;
+		s_msg->data_offset = sizeof(msg_type_settings_t);
+		memcpy(s_msg->md5_hash, s_header->hash, 16);
+		memcpy(&s_msg + 1, s_data_ptr, s_header->size);
+		s_msg->crc32 = crc32((char*)&s_msg->crc32 + 4, size - 4);
+
+		msg->size = size;
+		msg->subtype = 0;
+		msg->type = (uint8_t)NET_MSG_SURZA_SETTINGS;
+
+		net_send_msg(msg, NET_PRIORITY_HIGH, channel);
+	}
+
+	free(s_header);
+	free(s_data_ptr);
+
+	return;
+
 }
 
 
@@ -127,6 +219,10 @@ int logic_init() {
 
 	//прием новых конфигурационных файлов включаем в любом случае
 	net_add_dispatcher((uint8_t)NET_MSG_SURZA_SETTINGS, settings_recv_callback);
+
+	//прием запросов на получение текущего файла настройки
+	net_add_dispatcher((uint8_t)NET_MSG_SETTINGS_REQUEST, settings_request_callback);
+
 
 	return ok ? 0 : (-1);
 }
@@ -158,24 +254,12 @@ int read_settings() {
 	settings_data_ptr = fragments[1].pointer;
 
 	//проверка считанных данных
-	if (settings_header->size != fragments[1].size
+	if (!settings_data_ptr
+		|| settings_header->size != fragments[1].size
 		|| !crc32_check(settings_data_ptr, settings_header->size, settings_header->crc32) ) {
 		LOG_AND_SCREEN("Settings file data corrupted!");
-		return -1;
-	}
-
-	//чтение файла строк
-	if (filesystem_read_file_fragments(STRINGS_FILENAME, fragments, 1) < 0) {
-		LOG_AND_SCREEN("Load strings file header error!");
-		return -1;
-	}
-	
-	strings_header = (settings_file_header_t*) fragments[0].pointer;
-
-	//проверка соотвестви€ файла настроек файлу строк (сравнением парных хэшей)
-	if ( memcmp(settings_header->hash, strings_header->paired_hash, 16)
-		 || memcmp(strings_header->hash, settings_header->paired_hash, 16)) {
-		LOG_AND_SCREEN("Settings file & strings file not a pair!");
+		if(settings_data_ptr)
+			free(settings_data_ptr);
 		return -1;
 	}
 
@@ -185,6 +269,7 @@ int read_settings() {
 	
 	if (ParamTree_Make(settings_data_ptr, settings_header->size) < 0) {
 		LOG_AND_SCREEN("Param tree build failed!");
+		free(settings_data_ptr);
 		return -1;
 	}
 
