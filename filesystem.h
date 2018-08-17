@@ -1,11 +1,16 @@
 #pragma once
 
+#include <rtfiles.h>
 
+
+#define FILESYSTEM_NO_ERR          0
 
 #define FILESYSTEM_NO_DIR       (-10)
 #define FILESYSTEM_NO_FILE      (-11)
 #define FILESYSTEM_ALLOC_ERR    (-12)
 #define FILESYSTEM_IO_ERR       (-13)
+#define FILESYSTEM_OPEN_ERR     (-14)
+
 
 
 typedef struct {

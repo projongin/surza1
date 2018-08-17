@@ -131,7 +131,7 @@ int  main(int argc, char * argv[])
 	if (init_flags.base_init) {
 		init_flags.settings_init = (read_settings() >= 0) ? true : false;
 		if (init_flags.settings_init) {
-			LOG_AND_SCREEN("Read settings file OK!");
+			LOG_AND_SCREEN("Read settings file OK");
 		}
 		else {
 			LOG_AND_SCREEN("Settings file ERROR!");
@@ -146,7 +146,7 @@ int  main(int argc, char * argv[])
 			LOG_AND_SCREEN("net_init()  fail!");
 		}
 		else {
-			LOG_AND_SCREEN("net_init()  ok!");
+			LOG_AND_SCREEN("net_init()  OK");
 			init_flags.net_init = true;
 		}
 	}
@@ -159,7 +159,7 @@ int  main(int argc, char * argv[])
 		if (logic_init() < 0) {
 			LOG_AND_SCREEN("Logic init fail!");
 		} else {
-			LOG_AND_SCREEN("Logic init OK!");
+			LOG_AND_SCREEN("Logic init OK");
 			init_flags.logic_init = true;
 		}
 	}
@@ -175,7 +175,7 @@ int  main(int argc, char * argv[])
 		}
 		while (true) { RTKDelay(1000); }
 	}  else {
-		LOG_AND_SCREEN("init()  ok");
+		LOG_AND_SCREEN("init()  OK");
 	}
 #endif
 
@@ -187,7 +187,7 @@ int  main(int argc, char * argv[])
 	if(init_flags.net_init)
 		net_start();
 
-
+	
 	//---------------------------------
 	//тесты модулей
 	//printf("\n buf_pool_test() = %d\n", buf_pool_test());
@@ -203,6 +203,7 @@ int  main(int argc, char * argv[])
 	time_prev = time;
 
 	
+
 	while (true) {
 		WATCHDOG_UPDATE();
 

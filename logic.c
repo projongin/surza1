@@ -16,6 +16,7 @@
 
 
 #define SETTINGS_FILENAME  "settings.bin"
+#define FIRMWARE_FILENAME  "Surza.RTA"
 
 
 #pragma pack(push)
@@ -82,10 +83,10 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 	fragments[1].pointer = (char*)s_msg + s_msg->data_offset;
 	fragments[1].size = s_msg->bytes;
 
-	if (!filesystem_set_current_dir("C:\\") < 0)
+	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR)
 		return;
 
-	if (filesystem_write_file_fragments(SETTINGS_FILENAME, fragments, 2) < 0)
+	if (filesystem_write_file_fragments(SETTINGS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR)
 		return;
 
     
@@ -101,7 +102,17 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 
 	msg_type_settings_t* s_msg;
 
-	if (!init_flags.settings_init || !settings_header) {
+	msg_type_settings_request_t* request = (msg_type_settings_request_t*)&msg->data[0];
+
+	bool any = true;
+	for (int i = 0; i<16; i++)
+		if (request->md5_hash[i]) {
+			any = false;
+			break;
+		}
+
+	if (!init_flags.settings_init || !settings_header
+		|| (!any && memcmp(request->md5_hash, settings_header->hash, 16))) {
 
 		
 		if (net_msg_buf_get_available_space(msg) < sizeof(msg_type_settings_t)) {
@@ -125,30 +136,17 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 		return;
 	}
 
-	msg_type_settings_request_t* request = (msg_type_settings_request_t*) &msg->data[0];
-	
-	bool any = true;
-	for(int i=0; i<16; i++)
-		if (request->md5_hash[i]) {
-			any = false;
-			break;
-		}
-
-	if (!any || memcmp(request->md5_hash, settings_header->hash, 16))
-		return;
-
-	
 
 	//чтение файла настроек
 
-	if (!filesystem_set_current_dir("C:\\") < 0) return;
+	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR) return;
 	
 	filesystem_fragment_t fragments[2];
 
 	fragments[0].size = sizeof(settings_file_header_t);
 	fragments[1].size = 0;
 
-	if (filesystem_read_file_fragments(SETTINGS_FILENAME, fragments, 2) < 0) return;
+	if (filesystem_read_file_fragments(SETTINGS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR) return;
 
 	settings_file_header_t* s_header = (settings_file_header_t*)fragments[0].pointer;
 	char* s_data_ptr = fragments[1].pointer;
@@ -175,14 +173,14 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 		if (net_msg_buf_get_available_space(msg) < size) {
 			msg = net_get_msg_buf(size);
 			if (!msg)
-				break;;
+				break;
 		}
 
 		s_msg = (msg_type_settings_t*) &msg->data;
 		s_msg->bytes = s_header->size;
 		s_msg->data_offset = sizeof(msg_type_settings_t);
 		memcpy(s_msg->md5_hash, s_header->hash, 16);
-		memcpy(&s_msg + 1, s_data_ptr, s_header->size);
+		memcpy(s_msg + 1, s_data_ptr, s_header->size);
 		s_msg->crc32 = crc32((char*)&s_msg->crc32 + 4, size - 4);
 
 		msg->size = size;
@@ -190,6 +188,8 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 		msg->type = (uint8_t)NET_MSG_SURZA_SETTINGS;
 
 		net_send_msg(msg, NET_PRIORITY_HIGH, channel);
+
+		break;
 	}
 
 	free(s_header);
@@ -201,6 +201,54 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 
 
 
+void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
+	LOG_AND_SCREEN("New firmware received");
+
+	msg_type_firmware_t* f_msg;
+	bool ok = false;
+
+	while (true) {
+
+		if (msg->size < sizeof(msg_type_firmware_t)) break;
+
+		f_msg = (msg_type_firmware_t*)&msg->data[0];
+
+		if (f_msg->data_offset + f_msg->bytes != msg->size) break;
+
+		if (!crc32_check((char*)f_msg + 4, f_msg->data_offset + f_msg->bytes - 4, f_msg->crc32)) break;
+
+		ok = true;
+		break;
+	}
+
+	if (!ok) {
+		LOG_AND_SCREEN("Error! New firmware corrupted!");
+		return;
+	}
+
+    //запись файла на диск
+
+	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR) {
+		LOG_AND_SCREEN("Filesystem i/o error!");
+		return;
+	}
+
+	//удалить атрибут "только чтение"
+	int ttt = RTFSetAttributes(FIRMWARE_FILENAME, 0);
+	if (ttt < 0) {
+		LOG_AND_SCREEN("RTFSetAttributes return %d", ttt);
+	}
+
+	if (filesystem_write_file(FIRMWARE_FILENAME, ((char*)f_msg)+f_msg->data_offset,f_msg->bytes) != FILESYSTEM_NO_ERR) {
+		LOG_AND_SCREEN("Error! Write file \"%s\" failed!", FIRMWARE_FILENAME);
+		return;
+	}
+
+	RTFSetAttributes(FIRMWARE_FILENAME, RTF_ATTR_READ_ONLY);
+
+	LOG_AND_SCREEN("Reboot...");
+	reboot();
+}
 
 
 
@@ -223,6 +271,8 @@ int logic_init() {
 	//прием запросов на получение текущего файла настройки
 	net_add_dispatcher((uint8_t)NET_MSG_SETTINGS_REQUEST, settings_request_callback);
 
+	//прием файла новой прошивки
+	net_add_dispatcher((uint8_t)NET_MSG_SURZA_FIRMWARE, new_firmware_callback);
 
 	return ok ? 0 : (-1);
 }
@@ -234,7 +284,7 @@ int read_settings() {
 
 	LOG_AND_SCREEN("Load settings...");
 
-	if (!filesystem_set_current_dir("C:\\") < 0) {
+	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR) {
 		LOG_AND_SCREEN("Filesystem i/o error!");
 		return -1;
 	}
@@ -245,7 +295,7 @@ int read_settings() {
 	fragments[1].size = 0;
 
 	//чтение файла настроек
-	if (filesystem_read_file_fragments(SETTINGS_FILENAME, fragments, 2) < 0) {
+	if (filesystem_read_file_fragments(SETTINGS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR) {
 		LOG_AND_SCREEN("Load settings file error!");
 		return -1;
 	}
@@ -263,7 +313,7 @@ int read_settings() {
 		return -1;
 	}
 
-	LOG_AND_SCREEN("Settings load ok");
+	LOG_AND_SCREEN("Settings load OK");
 	LOG_AND_SCREEN("Building param tree...");
 
 	

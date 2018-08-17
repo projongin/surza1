@@ -352,7 +352,7 @@ bool net_load_settings() {
 
 	//IP
 	unsigned val;
-	if (sscanf(item->value, "%u", &val) <= 0)
+	if (sscanf_s(item->value, "%u", &val) <= 0)
 		return false;
 
 	for (int i = 3; i >= 0; i--){
@@ -365,7 +365,7 @@ bool net_load_settings() {
 	if (!item || !item->value)
 		return false;
 
-	if (sscanf(item->value, "%u", &val) <= 0)
+	if (sscanf_s(item->value, "%u", &val) <= 0)
 		return false;
 
 	if (val > 0xffff)

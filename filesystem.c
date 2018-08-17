@@ -1,6 +1,4 @@
 
-#include <rtfiles.h>
-
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -10,11 +8,11 @@
 
 
 int filesystem_set_current_dir(char* dir_name) {
-	return RTFSetCurrentDir(dir_name);
+	return (RTFSetCurrentDir(dir_name) == RTF_NO_ERROR) ? FILESYSTEM_NO_ERR : FILESYSTEM_IO_ERR;
 }
 
 int filesystem_delete_file(char* filename) {
-	return RTFDelete(filename);
+	return (RTFDelete(filename)==RTF_NO_ERROR)? FILESYSTEM_NO_ERR : FILESYSTEM_IO_ERR;
 }
 
 
@@ -25,7 +23,7 @@ int filesystem_read_file_fragments(char* filename, filesystem_fragment_t* fragme
 
 	f_handle = RTFOpen(filename, RTF_READ_ONLY);
 	if (f_handle < 0)
-		return false;
+		return FILESYSTEM_OPEN_ERR;
 
 	bool ok = true;
 	int res;
@@ -79,7 +77,7 @@ int filesystem_read_file_fragments(char* filename, filesystem_fragment_t* fragme
 		}
 	}
 
-	return ok ? true : FILESYSTEM_IO_ERR;
+	return ok ? FILESYSTEM_NO_ERR : FILESYSTEM_IO_ERR;
 
 }
 
@@ -97,10 +95,9 @@ int filesystem_read_file(char* filename, void** data, unsigned* size) {
 		*size = fr.size;
 	}
 
-	return res ? true : FILESYSTEM_IO_ERR;
+	return res ? FILESYSTEM_NO_ERR : FILESYSTEM_IO_ERR;
 	
 }
-
 
 
 
@@ -109,8 +106,8 @@ int filesystem_write_file_fragments(char* filename, const filesystem_fragment_t*
 	RTFHANDLE f_handle;
 
 	f_handle = RTFOpen(filename, RTF_CREATE | RTF_CREATE_ALWAYS | RTF_READ_WRITE);
-	if (f_handle < 0)
-		return false;
+	if (f_handle < 0) 
+		return FILESYSTEM_OPEN_ERR;
 
 	bool ok = true;
 	int res;
@@ -128,7 +125,7 @@ int filesystem_write_file_fragments(char* filename, const filesystem_fragment_t*
 
 	RTFClose(f_handle);
 
-	return ok ? true : FILESYSTEM_IO_ERR;
+	return ok ? FILESYSTEM_NO_ERR : FILESYSTEM_IO_ERR;
 }
 
 
