@@ -4,6 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <Rtk32.h>
+
+
 #include "logic.h"
 #include "net.h"
 #include "net_messages.h"
@@ -12,6 +15,7 @@
 #include "crc32.h"
 #include "common.h"
 #include "param_tree.h"
+#include "ai8s.h"
 
 
 
@@ -252,18 +256,35 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 
 
 
+bool init_math();
+bool init_adc();
+
+
+
 int logic_init() {
 
-	bool ok = true;
+	bool ok = false;
 
 	if (init_flags.settings_init) {
 
 		//init logic
+		while (true) {
+
+			if (!init_math()) {
+				LOG_AND_SCREEN("Logic main i/o tables init failed!");
+				break;
+			}
+
+			if (!init_adc()) {
+				LOG_AND_SCREEN("ADC init failed!");
+				break;
+			}
 
 
+			ok = true;
+		}
+		
 	}
-	else
-		ok = false;
 
 	//прием новых конфигурационных файлов включаем в любом случае
 	net_add_dispatcher((uint8_t)NET_MSG_SURZA_SETTINGS, settings_recv_callback);
@@ -330,4 +351,209 @@ int read_settings() {
 }
 
 
+
+static void MAIN_LOGIC_PERIOD_FUNC();
+
+
+static float* math_real_in;
+static int32_t* math_int_in;
+static uint8_t* math_bool_in;
+static float* math_real_out;
+static int32_t* math_int_out;
+static uint8_t* math_bool_out;
+
+static unsigned math_real_in_num;
+static unsigned math_int_in_num;
+static unsigned math_bool_in_num;
+static unsigned math_real_out_num;
+static unsigned math_int_out_num;
+static unsigned math_bool_out_num;
+
+
+
+
+//------------------------------------------------------------------------
+//  ќсновные таблицы
+//------------------------------------------------------------------------
+int32_t tmp_int_in[30];
+
+bool init_math() {
+
+	//******************
+	math_int_in_num = 30;
+	math_int_in = &tmp_int_in[0];
+	//*******************
+
+	return true;
+}
+
+//------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+//------------------------------------------------------------------------
+//  ADC
+//------------------------------------------------------------------------
+
+static unsigned adc_num;
+static unsigned adc_ch_num[2];
+
+static int32_t* adc_table[2][8];
+
+static unsigned adc1_adr, adc2_adr, period;
+
+unsigned SurzaPeriod() { return period; }
+
+void adc_irq_handler(void);
+
+
+bool init_adc() {
+
+	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	param_tree_node_t* item;
+
+	//считывание адресов плат и периода сурзы
+
+	item = ParamTree_Find(node, "ADC1", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &adc1_adr) <= 0)
+		return false;
+
+	item = ParamTree_Find(node, "ADC2", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &adc2_adr) <= 0)
+		return false;
+
+	item = ParamTree_Find(node, "PERIOD", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &period) <= 0)
+		return false;
+
+
+	item = ParamTree_Find(ParamTree_MainNode(), "ADC", PARAM_TREE_SEARCH_NODE);
+	if (!item)
+		return false;
+
+
+	//зануление всего
+	for (int i = 0; i < 2; i++) {
+		for (int j = 0; j < 8; j++)
+			adc_table[i][j] = NULL;
+		adc_ch_num[i] = 0;
+	}
+	adc_num = 1;
+
+
+	//считывание каналов (если заданы)
+	item = ParamTree_Child(item);
+	if (item) {
+
+		unsigned data[16];
+		for (int i = 0; i < 16; i++)
+			data[i] = math_int_in_num;
+
+		unsigned num=0;
+		unsigned n;
+
+		item = ParamTree_FirstItem(item);
+		while (item && num<16) {
+			
+			if (sscanf_s(item->value, "%u", &n) <= 0 || n>=16)
+				return false;
+			if (sscanf_s(item->name, "%u", &data[n]) <= 0 || data[n] >= math_int_in_num)
+				return false;
+
+			num++;
+
+			item = ParamTree_NextItem(item);
+		}
+
+
+		//заполнение таблиц ацп
+
+		for (unsigned i = 0; i < 16; i++){
+			if (data[i] < math_int_in_num) {
+				adc_table[i / 8][i % 8] = math_int_in + data[i];
+				adc_ch_num[i / 8]++;
+			}
+		}
+
+		if (adc_ch_num[1])
+			adc_num = 2;
+
+	}
+
+	return InitAI8S(adc_num, adc1_adr, adc2_adr, period, adc_irq_handler);
+}
+
+
+
+void adc_irq_handler(void){
+
+	//запуск второго ацп
+	if(adc_num>1)
+		ai8s_start_second_adc();
+
+	//чтение каналов ацп 1
+	for (unsigned i = 0; i < 8; i++)
+		if(adc_table[0][i])
+			*(adc_table[0][i]) = ai8s_read_ch(0, i);
+
+	//сброс прерывани€ чтением 7го канала (если не был прочитан до этого)
+	if(!adc_table[0][7])
+		(void)ai8s_read_ch(0, 7);
+		
+
+	//ожидание и чтение каналов второго ацп
+	if (adc_num > 1) {
+		if (ai8s_wait_second_adc()) {
+			for (unsigned i = 0; i < 8; i++)
+				if (adc_table[1][i])
+					*(adc_table[1][i]) = ai8s_read_ch(1, i);
+		}
+		else {  //в случае отказа второй платы все измерени€ принудительно занул€ютс€
+			for (unsigned i = 0; i < 8; i++)
+				if (adc_table[1][i])
+					*(adc_table[1][i]) = 0;
+		}
+	}
+
+	 
+	//обновление собаки
+	wdt_update();
+
+	//запуск основной функции логики
+	if (init_flags.logic_init)
+		MAIN_LOGIC_PERIOD_FUNC();
+
+}
+
+//------------------------------------------------------------------------
+
+
+
+
+
+//основна€ периодическа€ функци€ сурзы
+
+static void MAIN_LOGIC_PERIOD_FUNC() {
+
+
+
+}
 

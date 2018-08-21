@@ -45,7 +45,7 @@ typedef struct {
 	bool logic_init;
 } init_flags_t;
 
-extern init_flags_t init_flags;
+extern volatile init_flags_t init_flags;
 
 void common_init();
 

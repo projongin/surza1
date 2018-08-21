@@ -124,7 +124,7 @@ bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time) {
 
 
 //----------------------------------------------------------
-init_flags_t init_flags;
+volatile init_flags_t init_flags;
 
 void common_init() {
 
