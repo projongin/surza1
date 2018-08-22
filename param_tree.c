@@ -257,3 +257,21 @@ param_tree_node_t* ParamTree_NextItem(param_tree_node_t* node) {
 	return NULL;
 }
 
+
+unsigned ParamTree_ItemsNum(param_tree_node_t* node) {
+	unsigned cnt = 0;
+
+	if (!node)
+		return 0;
+
+	param_tree_node_t* n = node->child;
+
+	while (n) {
+		if (n->value)
+			cnt++;
+		n = n->next;
+	}
+
+	return cnt;
+}
+

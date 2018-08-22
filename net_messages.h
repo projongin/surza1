@@ -47,12 +47,36 @@ typedef struct msg_type_settings_request_tt {
 } msg_type_settings_request_t;
 
 
+//indi
+typedef struct msg_type_indi_tt {
+	uint32_t   header_size;     //sizeof(msg_type_settings_request_t) (for upward compatibility)
+	uint8_t    md5_hash[16];    //current settings hash
+	uint32_t   in_real_num;
+	uint32_t   in_real_offset;
+	uint32_t   in_int_num;
+	uint32_t   in_int_offset;
+	uint32_t   in_bool_num;
+	uint32_t   in_bool_offset;
+	uint32_t   out_real_num;
+	uint32_t   out_real_offset;
+	uint32_t   out_int_num;
+	uint32_t   out_int_offset;
+	uint32_t   out_bool_num;
+	uint32_t   out_bool_offset;
+	uint64_t   time;
+	// add additional fields here
+		
+} msg_type_indi_t;
+
+
 
 
 typedef struct msg_type_byborg_info_tt {
 	uint32_t  header[10];
 	uint16_t  regs[100];
 } msg_type_byborg_info_t;
+
+
 
 
 #pragma pack()

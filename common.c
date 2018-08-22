@@ -161,3 +161,19 @@ void reboot() {
 #endif
 	while (true);
 }
+
+
+
+
+//--------- steady clock -------------
+volatile int steady_clock = 0;
+
+int steady_clock_get() {
+	return atom_get_state(&steady_clock);
+}
+
+void steady_clock_update(int us) {
+	atom_add(&steady_clock, us);
+}
+
+//------------------------------------

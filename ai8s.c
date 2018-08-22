@@ -61,6 +61,8 @@ logic_adc_handler logic_handler;
 int RTKAPI AI8S_irq_handler(void* P) {
 	if (logic_handler)
 		logic_handler();
+	else
+		(void)ai8s_read_ch(0, 7);
 
 	//оповещение контроллера прерываний о конце обработки
 	RTKIRQEnd(AI8S_IRQ);
@@ -78,15 +80,9 @@ bool InitAI8S(unsigned adc_num, unsigned adc1_adr, unsigned adc2_adr, unsigned p
 	ai8s_adr2 = adc2_adr;
 
 	RTOutW(adc1_adr + AI8S_CONTROL_REG, 0x0020);
-	RTOutW(adc2_adr + AI8S_CONTROL_REG, 0x0020);
+	if (adc_num>1)
+		RTOutW(adc2_adr + AI8S_CONTROL_REG, 0x0020);
 
-
-	uint8_t dummy = RTIn(adc1_adr + AI8S_ID_REG);
-
-	/****************/
-	if (!dummy)
-		return false;
-	/*************/
 
 	if (RTIn(adc1_adr + AI8S_ID_REG) != 'A') {
 		LOG_AND_SCREEN("ERROR! ADC1 not found!");

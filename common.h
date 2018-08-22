@@ -54,3 +54,13 @@ void wdt_init();
 extern inline void wdt_update();
 
 void reboot();
+
+
+
+
+//--------- steady clock -------------
+int steady_clock_get();
+void steady_clock_update(int us);
+
+//------------------------------------
+

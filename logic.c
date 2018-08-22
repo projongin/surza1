@@ -274,14 +274,15 @@ int logic_init() {
 				LOG_AND_SCREEN("Logic main i/o tables init failed!");
 				break;
 			}
-
+			
 			if (!init_adc()) {
 				LOG_AND_SCREEN("ADC init failed!");
 				break;
 			}
-
+			
 
 			ok = true;
+			break;
 		}
 		
 	}
@@ -375,9 +376,117 @@ static unsigned math_bool_out_num;
 //------------------------------------------------------------------------
 //  Основные таблицы
 //------------------------------------------------------------------------
+float   tmp_float_in[30];
 int32_t tmp_int_in[30];
+uint8_t tmp_bool_in[30];
+float   tmp_float_out[30];
+int32_t tmp_int_out[30];
+uint8_t tmp_bool_out[30];
 
-bool init_math() {
+
+#define MATH_IO_REAL_IN   tmp_float_in
+#define MATH_IO_INT_IN    tmp_int_in
+#define MATH_IO_BOOL_IN   tmp_bool_in
+#define MATH_IO_REAL_OUT  tmp_float_out
+#define MATH_IO_INT_OUT   tmp_int_out
+#define MATH_IO_BOOL_OUT  tmp_bool_out
+
+
+
+static bool init_math() {
+
+	math_real_in = NULL;
+	math_int_in = NULL;
+	math_bool_in = NULL;
+	math_real_out = NULL;
+	math_int_out = NULL;
+	math_bool_out = NULL;
+
+	math_real_in_num = 0;
+	math_int_in_num = 0;
+	math_bool_in_num = 0;
+	math_real_out_num = 0;
+	math_int_out_num = 0;
+	math_bool_out_num = 0;
+
+
+	param_tree_node_t* common_node = ParamTree_Find(ParamTree_MainNode(), "MAIN_TABLES", PARAM_TREE_SEARCH_NODE);
+	if (!common_node)
+		return false;
+
+	param_tree_node_t* node;
+	unsigned cnt;
+
+
+	node = ParamTree_Find(common_node, "IN_REAL", PARAM_TREE_SEARCH_NODE);
+	if (node) {
+		cnt = ParamTree_ItemsNum(node);
+		if (cnt > (sizeof(MATH_IO_REAL_IN) / sizeof(MATH_IO_REAL_IN[0]))) {
+			LOG_AND_SCREEN("ERROR!!! MYD N of REAL inputs < Logic REAL inputs!");
+			return false;
+		}
+		math_real_in = &MATH_IO_REAL_IN[0];
+		math_real_in_num = cnt;
+	}
+
+	node = ParamTree_Find(common_node, "IN_INT", PARAM_TREE_SEARCH_NODE);
+	if (node) {
+		cnt = ParamTree_ItemsNum(node);
+		if (cnt > (sizeof(MATH_IO_INT_IN) / sizeof(MATH_IO_INT_IN[0]))) {
+			LOG_AND_SCREEN("ERROR!!! MYD N of INT inputs < Logic INT inputs!");
+			return false;
+		}
+		math_int_in = &MATH_IO_INT_IN[0];
+		math_int_in_num = cnt;
+	}
+
+	node = ParamTree_Find(common_node, "IN_BOOL", PARAM_TREE_SEARCH_NODE);
+	if (node) {
+		cnt = ParamTree_ItemsNum(node);
+		if (cnt > (sizeof(MATH_IO_BOOL_IN) / sizeof(MATH_IO_BOOL_IN[0]))) {
+			LOG_AND_SCREEN("ERROR!!! MYD N of BOOL inputs < Logic BOOL inputs!");
+			return false;
+		}
+		math_bool_in = &MATH_IO_BOOL_IN[0];
+		math_bool_in_num = cnt;
+	}
+
+	node = ParamTree_Find(common_node, "OUT_REAL", PARAM_TREE_SEARCH_NODE);
+	if (node) {
+		cnt = ParamTree_ItemsNum(node);
+		if (cnt > (sizeof(MATH_IO_REAL_OUT) / sizeof(MATH_IO_REAL_OUT[0]))) {
+			LOG_AND_SCREEN("ERROR!!! MYD N of REAL outputs < Logic REAL outputs!");
+			return false;
+		}
+		math_real_out = &MATH_IO_REAL_OUT[0];
+		math_real_out_num = cnt;
+	}
+
+	node = ParamTree_Find(common_node, "OUT_INT", PARAM_TREE_SEARCH_NODE);
+	if (node) {
+		cnt = ParamTree_ItemsNum(node);
+		if (cnt > (sizeof(MATH_IO_INT_OUT) / sizeof(MATH_IO_INT_OUT[0]))) {
+			LOG_AND_SCREEN("ERROR!!! MYD N of INT outputs < Logic INT outputs!");
+			return false;
+		}
+		math_int_out = &MATH_IO_INT_OUT[0];
+		math_int_out_num = cnt;
+	}
+
+	node = ParamTree_Find(common_node, "OUT_BOOL", PARAM_TREE_SEARCH_NODE);
+	if (node) {
+		cnt = ParamTree_ItemsNum(node);
+		if (cnt > (sizeof(MATH_IO_BOOL_OUT) / sizeof(MATH_IO_BOOL_OUT[0]))) {
+			LOG_AND_SCREEN("ERROR!!! MYD N of BOOL outputs < Logic BOOL outputs!");
+			return false;
+		}
+		math_bool_out = &MATH_IO_BOOL_OUT[0];
+		math_bool_out_num = cnt;
+	}
+
+	
+
+
 
 	//******************
 	math_int_in_num = 30;
@@ -389,10 +498,104 @@ bool init_math() {
 
 //------------------------------------------------------------------------
 
+msg_type_indi_t* indi_msg;
+volatile int indi_msg_rdy;
+volatile int indi_msg_fill_new_data;
 
 
+static void indi_init() {
+	indi_msg = NULL;
+	indi_msg_rdy = 0;
+	indi_msg_fill_new_data = 0;
+
+}
 
 
+#define INDI_PART_SIZE  100   //максимально допустимое количество копируемых байт индикаторов в одном прерывании (такте сурзы)
+
+static void indi_copy() {
+
+	static int type = 0;
+	static int part = 0;
+
+	switch (type) {
+
+	case 0:
+		if (!atom_get_state(&indi_msg_fill_new_data))
+			return;
+		else
+			if(part==0)
+				atom_set_state(&indi_msg_fill_new_data, 0);
+
+
+		if (math_real_in_num) {
+			if ((math_real_in_num << 2) > INDI_PART_SIZE) {
+				memcpy((char*)indi_msg + indi_msg->in_real_offset + INDI_PART_SIZE * part, (char*)math_real_in + INDI_PART_SIZE * part, INDI_PART_SIZE);
+				part++;
+			}
+			else {
+				memcpy((char*)indi_msg + indi_msg->in_real_offset, math_real_in, math_real_in_num*4);
+				part = 0;
+				type++;
+			}
+			break;
+	    }
+		type++;
+		part = 0;
+
+	case 1:   //продолжить далее все остальные кейсы по подобию
+		if (math_int_in_num) {
+			memcpy((char*)indi_msg + indi_msg->in_int_offset, math_int_in, math_int_in_num * 4);
+			break;
+		}
+		type++;
+		part = 0;
+
+	case 2:
+		if (math_bool_in_num) {
+			memcpy((char*)indi_msg + indi_msg->in_bool_offset, math_bool_in, math_bool_in_num);
+			break;
+		}
+		type++;
+
+	case 3:
+		if (math_real_out_num) {
+			memcpy((char*)indi_msg + indi_msg->out_real_offset, math_real_out, math_real_out_num * 4);
+			break;
+		}
+		type++;
+
+	case 4:
+		if (math_int_out_num) {
+			memcpy((char*)indi_msg + indi_msg->out_int_offset, math_int_out, math_int_out_num * 4);
+			break;
+		}
+		type++;
+
+	case 5:
+		if (math_bool_out_num) {
+			memcpy((char*)indi_msg + indi_msg->out_bool_offset, math_bool_out, math_bool_out_num);
+			break;
+		}
+		type++;
+
+		break;
+	
+	}
+
+	if (type==6) {
+		type = 0;
+		part = 0;
+
+		atom_set_state(&indi_msg_rdy, 1);
+	}
+
+}
+
+bool indi_send() {
+
+	return false;
+}
 
 
 
@@ -503,6 +706,8 @@ bool init_adc() {
 
 
 
+
+
 void adc_irq_handler(void){
 
 	//запуск второго ацп
@@ -514,10 +719,11 @@ void adc_irq_handler(void){
 		if(adc_table[0][i])
 			*(adc_table[0][i]) = ai8s_read_ch(0, i);
 
+	
 	//сброс прерывания чтением 7го канала (если не был прочитан до этого)
 	if(!adc_table[0][7])
 		(void)ai8s_read_ch(0, 7);
-		
+
 
 	//ожидание и чтение каналов второго ацп
 	if (adc_num > 1) {
@@ -548,10 +754,11 @@ void adc_irq_handler(void){
 
 
 
-
 //основная периодическая функция сурзы
 
 static void MAIN_LOGIC_PERIOD_FUNC() {
+
+	steady_clock_update((int)SurzaPeriod());
 
 
 

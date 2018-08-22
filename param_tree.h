@@ -33,3 +33,5 @@ param_tree_node_t* ParamTree_Child(param_tree_node_t* node);
 param_tree_node_t* ParamTree_FirstItem(param_tree_node_t* node);
 
 param_tree_node_t* ParamTree_NextItem(param_tree_node_t* node);
+
+unsigned ParamTree_ItemsNum(param_tree_node_t* node);
