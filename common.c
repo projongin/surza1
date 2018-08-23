@@ -1,6 +1,7 @@
 
 #include "Rtk32.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "global_defines.h"
 #include "common.h"
@@ -175,5 +176,16 @@ int steady_clock_get() {
 void steady_clock_update(int us) {
 	atom_add(&steady_clock, us);
 }
+
+
+bool steady_clock_expired(int32_t start_time, int32_t stop_time, uint32_t timeout) {
+	return ((uint32_t)stop_time - (uint32_t)start_time >= timeout);
+}
+
+
+bool steady_clock_expired_now(int32_t start_time, uint32_t timeout) {
+	return steady_clock_expired(start_time, steady_clock_get(), timeout);
+}
+
 
 //------------------------------------

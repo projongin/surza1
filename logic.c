@@ -256,8 +256,9 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 
 
 
-bool init_math();
-bool init_adc();
+static bool init_math();
+static bool init_adc();
+static bool indi_init();
 
 
 
@@ -277,6 +278,11 @@ int logic_init() {
 			
 			if (!init_adc()) {
 				LOG_AND_SCREEN("ADC init failed!");
+				break;
+			}
+
+			if (!indi_init()) {
+				LOG_AND_SCREEN("INDI init failed!");
 				break;
 			}
 			
@@ -497,104 +503,195 @@ static bool init_math() {
 }
 
 //------------------------------------------------------------------------
+bool indi_init_ok = false;
+static msg_type_indi_t* indi_msg = NULL;
+static volatile int indi_msg_fill_new_data;
 
-msg_type_indi_t* indi_msg;
-volatile int indi_msg_rdy;
-volatile int indi_msg_fill_new_data;
+struct indi_step_t {
+	void*     src_ptr;
+	unsigned  dst_offset;
+	unsigned  bytes;
+};
+
+static unsigned indi_steps;
+static struct indi_step_t* indi_step_pointers = NULL;
+
+static unsigned base_offset[6];   //смещения начала данных по типам от начала сообщения (msg_type_indi_t)
+
+static unsigned indi_msg_size;    //размер заполненного сообщения (msg_type_indi_t + данные)
 
 
-static void indi_init() {
+//максимально допустимое количество копируемых байт индикаторов в одном прерывании (такте сурзы)
+//задавать обязательно только кратно 4 !!! (иначе могут портится данные, так как одно значение может писаться частями из разных тактов)
+#define INDI_PART_SIZE  64
+
+
+static bool indi_init() {
+
+	indi_init_ok = false;
 	indi_msg = NULL;
-	indi_msg_rdy = 0;
 	indi_msg_fill_new_data = 0;
 
+
+	unsigned bytes_num[6];  //количество данных для копирования по типам в байтах
+	bytes_num[0] = math_real_in_num * 4;
+	bytes_num[1] = math_int_in_num * 4;
+	bytes_num[2] = math_bool_in_num;
+	bytes_num[3] = math_real_out_num * 4;
+	bytes_num[4] = math_int_out_num * 4;
+	bytes_num[5] = math_bool_out_num;
+
+	void* src_ptr[6];    //указатели на источники данных
+	src_ptr[0] = math_real_in;
+	src_ptr[1] = math_int_in;
+	src_ptr[2] = math_bool_in;
+	src_ptr[3] = math_real_out;
+	src_ptr[4] = math_int_out;
+	src_ptr[5] = math_bool_out;
+	
+	//смещения начала данных разных типов от начала сообщения
+	base_offset[0] = sizeof(msg_type_indi_t);
+	for (int i = 1; i < 6; i++)
+		base_offset[i] = base_offset[i - 1] + bytes_num[i-1];
+
+	indi_msg_size = base_offset[5] + bytes_num[5];
+
+	//определения кол-ва частей для копирования для каждого типа
+	unsigned parts[6];
+	for (int i = 0; i < 6; i++)
+		parts[i] = (bytes_num[i] / INDI_PART_SIZE) + ((bytes_num[i] % INDI_PART_SIZE) ? 1 : 0);
+
+	indi_steps = 0;
+	unsigned n;
+
+	for (n = 0, indi_steps = 0; n < 6; n++)
+		indi_steps += parts[n];
+
+	//выделение памяти для таблицы
+	indi_step_pointers = (struct indi_step_t*) malloc(sizeof(struct indi_step_t)*indi_steps);
+	if (!indi_step_pointers)
+		return false;
+
+
+	//заполнение таблицы
+	n = 0;
+	unsigned p;
+	unsigned offset;
+
+
+	for(int i=0; i<6; i++)
+		for (p = 0, offset = base_offset[i]; p < parts[i]; p++, n++) {
+			indi_step_pointers[n].src_ptr = (char*)(src_ptr[i]) + p * INDI_PART_SIZE;
+			indi_step_pointers[n].bytes = (p + 1 == parts[i]) ? ( (bytes_num[i] % INDI_PART_SIZE) ? (bytes_num[i] % INDI_PART_SIZE ) : INDI_PART_SIZE ) : INDI_PART_SIZE;
+			indi_step_pointers[n].dst_offset = offset;
+			
+			offset += indi_step_pointers[n].bytes;
+		}
+
+	indi_init_ok = true;
+
+	return true;
 }
 
 
-#define INDI_PART_SIZE  100   //максимально допустимое количество копируемых байт индикаторов в одном прерывании (такте сурзы)
+
 
 static void indi_copy() {
 
-	static int type = 0;
-	static int part = 0;
+	static unsigned step = 0;
 
-	switch (type) {
+	if (atom_get_state(&indi_msg_fill_new_data)) {
 
-	case 0:
-		if (!atom_get_state(&indi_msg_fill_new_data))
-			return;
-		else
-			if(part==0)
-				atom_set_state(&indi_msg_fill_new_data, 0);
-
-
-		if (math_real_in_num) {
-			if ((math_real_in_num << 2) > INDI_PART_SIZE) {
-				memcpy((char*)indi_msg + indi_msg->in_real_offset + INDI_PART_SIZE * part, (char*)math_real_in + INDI_PART_SIZE * part, INDI_PART_SIZE);
-				part++;
-			}
-			else {
-				memcpy((char*)indi_msg + indi_msg->in_real_offset, math_real_in, math_real_in_num*4);
-				part = 0;
-				type++;
-			}
-			break;
-	    }
-		type++;
-		part = 0;
-
-	case 1:   //продолжить далее все остальные кейсы по подобию
-		if (math_int_in_num) {
-			memcpy((char*)indi_msg + indi_msg->in_int_offset, math_int_in, math_int_in_num * 4);
-			break;
+		memcpy((char*)indi_msg + indi_step_pointers[step].dst_offset, indi_step_pointers[step].src_ptr, indi_step_pointers[step].bytes);
+		step++;
+		if (step == indi_steps) {
+			step = 0;
+			atom_set_state(&indi_msg_fill_new_data, 0);
 		}
-		type++;
-		part = 0;
-
-	case 2:
-		if (math_bool_in_num) {
-			memcpy((char*)indi_msg + indi_msg->in_bool_offset, math_bool_in, math_bool_in_num);
-			break;
-		}
-		type++;
-
-	case 3:
-		if (math_real_out_num) {
-			memcpy((char*)indi_msg + indi_msg->out_real_offset, math_real_out, math_real_out_num * 4);
-			break;
-		}
-		type++;
-
-	case 4:
-		if (math_int_out_num) {
-			memcpy((char*)indi_msg + indi_msg->out_int_offset, math_int_out, math_int_out_num * 4);
-			break;
-		}
-		type++;
-
-	case 5:
-		if (math_bool_out_num) {
-			memcpy((char*)indi_msg + indi_msg->out_bool_offset, math_bool_out, math_bool_out_num);
-			break;
-		}
-		type++;
-
-		break;
-	
-	}
-
-	if (type==6) {
-		type = 0;
-		part = 0;
-
-		atom_set_state(&indi_msg_rdy, 1);
 	}
 
 }
 
-bool indi_send() {
 
-	return false;
+
+void indi_send() {
+
+	if (!indi_init_ok)
+		return;
+
+	static int last_time = 0;
+	static bool update = 0;
+
+	int new_time = steady_clock_get();
+
+	if (steady_clock_expired(last_time, new_time, INDI_PERIOD_MS*1000)) {
+		last_time = new_time;
+		update = true;
+	}
+
+
+	static state = 0;
+	static net_msg_t* msg = NULL;
+
+
+	switch (state) {
+	case 0:   //создать и заполнить новое сообщение
+		if (update) {
+			update = 0;
+
+			if (atom_get_state(&indi_msg_fill_new_data))
+				break;
+
+
+			msg  = net_get_msg_buf(indi_msg_size);
+			if (!msg)
+			 break;
+
+			msg->type = (uint8_t)NET_MSG_INDI;
+			msg->subtype = 0;
+			indi_msg = (msg_type_indi_t*) &msg->data[0];
+
+			//заполенение заголовка сообщения
+			indi_msg->header_size = sizeof(msg_type_indi_t);
+
+			memcpy(indi_msg->md5_hash, settings_header->hash, 16);
+
+			indi_msg->in_real_num = math_real_in_num;
+			indi_msg->in_int_num = math_int_in_num;
+			indi_msg->in_bool_num = math_bool_in_num;
+			indi_msg->out_real_num = math_real_out_num;
+			indi_msg->out_int_num = math_int_out_num;
+			indi_msg->out_bool_num = math_bool_out_num;
+
+			indi_msg->in_real_offset = base_offset[0];
+			indi_msg->in_int_offset = base_offset[1];
+			indi_msg->in_bool_offset = base_offset[2];
+			indi_msg->out_real_offset = base_offset[3];
+			indi_msg->out_int_offset = base_offset[4];
+			indi_msg->out_bool_offset = base_offset[5];
+
+			indi_msg->time = 0;
+
+			//флаг необходимости заполнить данные
+			atom_set_state(&indi_msg_fill_new_data, 1);
+			state = 1;
+		}
+
+		break;
+
+	case 1:   //ожидание заполнения данных
+
+		if (!atom_get_state(&indi_msg_fill_new_data)) {
+			//данные сообщения заполнены, отправка сообщения
+
+			net_send_msg(msg, NET_PRIORITY_HIGH, NET_BROADCAST_CHANNEL);
+			state = 0;
+		}
+
+		break;
+	}
+
+
 }
 
 
@@ -761,6 +858,9 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	steady_clock_update((int)SurzaPeriod());
 
 
+
+
+	indi_copy();
 
 }
 

@@ -61,6 +61,7 @@ void reboot();
 //--------- steady clock -------------
 int steady_clock_get();
 void steady_clock_update(int us);
-
+bool steady_clock_expired_now(int32_t start_time, uint32_t timeout);
+bool steady_clock_expired(int32_t start_time, int32_t stop_time, uint32_t timeout);
 //------------------------------------
 
