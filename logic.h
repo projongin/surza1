@@ -1,6 +1,13 @@
 #pragma once
 
 
+// !!!! нопедекемхе рхонб лъдю   бпелеммне, онйю ме ондйкчвем яюл лъд
+
+#define FALSE  0
+#define TRUE   1
+
+
+
 int logic_init();
 
 

@@ -258,8 +258,8 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 
 static bool init_math();
 static bool init_adc();
-static bool indi_init();
-
+static bool init_indi();
+static bool init_dic();
 
 
 int logic_init() {
@@ -280,8 +280,13 @@ int logic_init() {
 				LOG_AND_SCREEN("ADC init failed!");
 				break;
 			}
-
-			if (!indi_init()) {
+			
+			if (!init_dic()) {
+				LOG_AND_SCREEN("DIC init failed!");
+				break;
+			}
+			
+			if (!init_indi()) {
 				LOG_AND_SCREEN("INDI init failed!");
 				break;
 			}
@@ -490,14 +495,6 @@ static bool init_math() {
 		math_bool_out_num = cnt;
 	}
 
-	
-
-
-
-	//******************
-	math_int_in_num = 30;
-	math_int_in = &tmp_int_in[0];
-	//*******************
 
 	return true;
 }
@@ -526,7 +523,7 @@ static unsigned indi_msg_size;    //размер заполненного сообщения (msg_type_indi
 #define INDI_PART_SIZE  64
 
 
-static bool indi_init() {
+static bool init_indi() {
 
 	indi_init_ok = false;
 	indi_msg = NULL;
@@ -620,7 +617,8 @@ void indi_send() {
 		return;
 
 	static int last_time = 0;
-	static bool update = 0;
+
+	static bool update = false;
 
 	int new_time = steady_clock_get();
 
@@ -630,14 +628,14 @@ void indi_send() {
 	}
 
 
-	static state = 0;
+	static int state = 0;
 	static net_msg_t* msg = NULL;
 
 
 	switch (state) {
 	case 0:   //создать и заполнить новое сообщение
 		if (update) {
-			update = 0;
+			update = false;
 
 			if (atom_get_state(&indi_msg_fill_new_data))
 				break;
@@ -851,12 +849,229 @@ void adc_irq_handler(void){
 
 
 
+//------------------------------------------------------------------------
+//  DIC
+//------------------------------------------------------------------------
+
+static unsigned dic_adr;
+
+static uint8_t dic_dir[12];
+
+static uint8_t* dic_table[96];
+//static uint8_t* dic_table_out[96];
+
+
+#define DIC_DIR_IGNORE  0
+#define DIC_DIR_IN      1
+#define DIC_DIR_OUT     2
+
+static const uint8_t dic_adr_regs[12] = {0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14};
+
+
+static bool init_dic() {
+
+	memset(dic_dir, DIC_DIR_IGNORE, 12);
+
+	for (int i = 0; i < 96; i++)
+		dic_table[i] = NULL;
+
+	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	param_tree_node_t* item;
+
+	//считывание адреса платы DIC
+
+	item = ParamTree_Find(node, "DIC", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &dic_adr) <= 0)
+		return false;
+
+
+	//поиск всех входов и выходов
+	param_tree_node_t *in_node, *out_node;
+
+	in_node = ParamTree_Find(ParamTree_MainNode(), "DIC_IN", PARAM_TREE_SEARCH_NODE);
+	out_node = ParamTree_Find(ParamTree_MainNode(), "DIC_OUT", PARAM_TREE_SEARCH_NODE);
+
+	if (!in_node && !out_node)
+		return true;    //DIC не используется
+
+
+
+	//проверка наличия платы DIC
+	if (RTIn(dic_adr + 11) != 'g') {
+		LOG_AND_SCREEN("DIC:  NO DIC!!! dic adress: 0x%04X", dic_adr);
+		return false;
+	}
+
+
+	//считывание входов
+	item = NULL;
+	if(in_node)
+		item = ParamTree_Child(in_node);
+	if (item) {
+
+		unsigned pin, reg;
+
+		item = ParamTree_FirstItem(item);
+		while (item) {
+
+			if (sscanf_s(item->name, "%u", &reg) <= 0 || reg >= math_bool_in_num)
+				return false;
+			if (sscanf_s(item->value, "%u", &pin) <= 0 || pin >= 96)
+				return false;
+			
+			dic_dir[pin/8] = DIC_DIR_IN;
+			dic_table[pin] = math_bool_in + reg;
+
+			item = ParamTree_NextItem(item);
+		}
+	}
+
+	//считывание выходов
+	item = NULL;
+	if (out_node)
+		item = ParamTree_Child(out_node);
+	if (item) {
+
+		unsigned pin, reg;
+
+		item = ParamTree_FirstItem(item);
+		while (item) {
+
+			if (sscanf_s(item->name, "%u", &reg) <= 0 || reg >= math_bool_out_num)
+				return false;
+			if (sscanf_s(item->value, "%u", &pin) <= 0 || pin >= 96)
+				return false;
+
+			dic_dir[pin / 8] = DIC_DIR_OUT;
+			dic_table[pin] = math_bool_out + reg;
+
+			item = ParamTree_NextItem(item);
+		}
+	}
+
+
+	
+	// настройка платы DIC  в соответствии с прочитанной конифгурацией
+
+	//все выходы заранее в отключенное состояние
+	for(int i=0; i<12; i++)
+		RTOut(dic_adr+dic_adr_regs[i], 0);
+
+	//конфигурирование на вход\выход
+	uint8_t mask;
+
+	//XP1
+	mask = 0x80;
+	mask |= (dic_dir[0] != DIC_DIR_OUT ? 0x10 : 0);
+	mask |= (dic_dir[1] != DIC_DIR_OUT ? 0x02 : 0);
+	mask |= (dic_dir[2] != DIC_DIR_OUT ? 0x09 : 0);
+	RTOut(dic_adr + 3, mask);
+
+	//XP2
+	mask = 0x80;
+	mask |= (dic_dir[3] != DIC_DIR_OUT ? 0x10 : 0);
+	mask |= (dic_dir[4] != DIC_DIR_OUT ? 0x02 : 0);
+	mask |= (dic_dir[5] != DIC_DIR_OUT ? 0x09 : 0);
+	RTOut(dic_adr + 7, mask);
+
+	//XP5
+	mask = 0x80;
+	mask |= (dic_dir[6] != DIC_DIR_OUT ? 0x10 : 0);
+	mask |= (dic_dir[7] != DIC_DIR_OUT ? 0x02 : 0);
+	mask |= (dic_dir[8] != DIC_DIR_OUT ? 0x09 : 0);
+	RTOut(dic_adr + 11, mask);
+
+	//XP6
+	mask = 0x80;
+	mask |= (dic_dir[9] != DIC_DIR_OUT ? 0x10 : 0);
+	mask |= (dic_dir[10] != DIC_DIR_OUT ? 0x02 : 0);
+	mask |= (dic_dir[11] != DIC_DIR_OUT ? 0x09 : 0);
+	RTOut(dic_adr + 15, mask);
+
+	//все выходы заранее в отключенное состояние (второй раз на всяк случай)
+	for (int i = 0; i<12; i++)
+		RTOut(dic_adr + dic_adr_regs[i], 0);
+	
+
+	//установка аппаратного антидребезга
+	RTOut(dic_adr + 15, 0x01);
+	RTOut(dic_adr + 0, 0x08);  //320нс
+	RTOut(dic_adr + 15, 0x00);
+
+	
+
+	return true;
+}
+
+
+void dic_read() {
+
+	uint8_t u8;
+	unsigned cnt;
+	unsigned adr;
+
+	for (unsigned i = 0; i < 12; i++)
+		if (dic_dir[i] == DIC_DIR_IN) {
+			u8 = RTIn(dic_adr+dic_adr_regs[i]);
+			cnt = (i << 3);
+			for (adr = cnt; adr < cnt + 8; adr++, u8 >>= 1)
+				if (dic_table[adr])
+					*(dic_table[adr]) = (u8 & 0x01) ? TRUE : FALSE;
+		}
+
+}
+
+void dic_write() {
+
+	uint8_t u8;
+	unsigned cnt;
+	unsigned adr;
+
+	for (unsigned i = 0; i < 12; i++)
+		if (dic_dir[i] == DIC_DIR_OUT) {
+			cnt = (i << 3);
+			for (adr = cnt, u8 = 0; adr < cnt + 8; adr++) {
+				u8 >>= 1;
+				u8 |= (dic_table[adr] ? (*(dic_table[adr]) ? 0x00 : 0x80) : 0x80);
+			}
+			RTOut(dic_adr+dic_adr_regs[i], u8);
+		}
+
+}
+
+//-----------------------------------------------------------------
+
+
+
+
+
+
 //основная периодическая функция сурзы
 
 static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	steady_clock_update((int)SurzaPeriod());
 
+
+	dic_read();
+
+
+	// STEP      STEP      STEP      STEP      STEP
+
+	/***************/
+	memcpy(tmp_float_out, tmp_float_in, sizeof(tmp_float_out));
+	memcpy(tmp_int_out, tmp_int_in, sizeof(tmp_int_out));
+	memcpy(tmp_bool_out, tmp_bool_in, sizeof(tmp_bool_out));
+	/***************/
+
+
+	dic_write();
 
 
 

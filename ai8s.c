@@ -116,7 +116,7 @@ bool InitAI8S(unsigned adc_num, unsigned adc1_adr, unsigned adc2_adr, unsigned p
 
 	//делаю прерывание AI8S самым приоритетным
 	RTKIRQTopPriority(AI8S_IRQ, 8);
-	RTKSetIRQStack(AI8S_IRQ, 32768);
+	RTKSetIRQStack(AI8S_IRQ, 16384);
 
 
 
