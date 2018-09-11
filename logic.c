@@ -260,6 +260,7 @@ static bool init_math();
 static bool init_adc();
 static bool init_indi();
 static bool init_dic();
+static bool init_fiu();
 
 
 int logic_init() {
@@ -283,6 +284,11 @@ int logic_init() {
 			
 			if (!init_dic()) {
 				LOG_AND_SCREEN("DIC init failed!");
+				break;
+			}
+
+			if (!init_fiu()) {
+				LOG_AND_SCREEN("FIU init failed!");
 				break;
 			}
 			
@@ -1048,6 +1054,161 @@ void dic_write() {
 //-----------------------------------------------------------------
 
 
+//------------------------------------------------------------------------
+//   FIU
+//------------------------------------------------------------------------
+#define FIU_CODE  120
+
+#define FIU_SETTINGS_OFFSET  (32)
+
+static unsigned fiu1_adr, fiu2_adr;
+
+typedef struct {
+	uint8_t* cmd;
+	int32_t* setpoint;
+	unsigned adr_to_write;
+} fiu_table_t;
+
+fiu_table_t fiu_table[24];
+
+unsigned fiu_table_size;
+
+
+static bool init_fiu() {
+
+	fiu_table_size = 0;
+
+	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	param_tree_node_t* item;
+	param_tree_node_t* fiu_node;
+
+	//считывание адресов плат ФИУ
+
+	item = ParamTree_Find(node, "FIU1", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &fiu1_adr) <= 0)
+		return false;
+
+	item = ParamTree_Find(node, "FIU2", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &fiu2_adr) <= 0)
+		return false;
+
+
+	fiu_node = ParamTree_Find(ParamTree_MainNode(), "FIU", PARAM_TREE_SEARCH_NODE);
+	if (!fiu_node)
+		return true;   // ФИУ не используется
+	
+
+	int num;
+	bool err = false;
+	unsigned reg, board, ch;
+	bool board_en[2];
+
+	board_en[0] = false;
+	board_en[1] = false;
+
+
+	node = ParamTree_Child(fiu_node);
+	for (num = 0, node = ParamTree_Child(fiu_node); (num < 24) && node && !node->value && !err; num++, node = node->next) {
+
+		item = ParamTree_Find(node, "board", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &board) <= 0 || board >= 2)
+				err = true;
+	
+
+		item = ParamTree_Find(node, "channel", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &ch) <= 0 || ch >= 12)
+				err = true;
+
+		if (!err) {
+			fiu_table[num].adr_to_write = (board ? fiu2_adr : fiu1_adr) + ch * 2;
+			board_en[board] = true;
+		}
+
+		item = ParamTree_Find(node, "cmd", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &reg) <= 0 || reg >= math_bool_out_num)
+				err = true;
+
+		if(!err)
+			fiu_table[num].cmd = math_bool_out + reg;
+
+
+		item = ParamTree_Find(node, "setpoint", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &reg) <= 0 || reg >= math_int_out_num)
+				err = true;
+
+		if (!err) {
+			fiu_table[num].setpoint = math_int_out + reg;
+
+			fiu_table_size++;
+		}
+	}
+
+	if (err) {
+		fiu_table_size = 0;
+		return false;
+	}
+
+	if (!fiu_table_size)
+		return true;  //нет настроенных каналов
+
+	
+	//проверка наличия фиу1 и фиу2
+	if (board_en[0] && RTIn(fiu1_adr + FIU_SETTINGS_OFFSET) != FIU_CODE) {
+		fiu_table_size = 0;
+		LOG_AND_SCREEN("FIU_1:  NO FIU!! fiu adress: 0x%04X", fiu1_adr);
+		return false;
+	}
+
+	if (board_en[1] && RTIn(fiu2_adr + FIU_SETTINGS_OFFSET) != FIU_CODE) {
+		fiu_table_size = 0;
+		LOG_AND_SCREEN("FIU_2:  NO FIU!! fiu adress: 0x%04X", fiu2_adr);
+		return false;
+	}
+	
+	
+	return true;
+}
+
+
+void fiu_write() {
+
+	int32_t setpoint;
+
+	for (unsigned i = 0; i < fiu_table_size; i++)
+		if (*(fiu_table[i].cmd)){
+			setpoint = *(fiu_table[i].setpoint);
+			if (setpoint >= 0){
+				if (setpoint > 0xffff)
+					setpoint = 0xffff;
+				RTOutW(fiu_table[i].adr_to_write, (uint16_t)setpoint);
+			}
+		}
+
+}
+
+//---------------------------------------------------------
+
 
 
 
@@ -1073,7 +1234,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	dic_write();
 
-
+	fiu_write();
 
 	indi_copy();
 
