@@ -18,6 +18,9 @@
 #include "ai8s.h"
 
 
+#include "math\MYD.h" 
+#include "math\rtwtypes.h"
+
 
 #define SETTINGS_FILENAME  "settings.bin"
 #define FIRMWARE_FILENAME  "Surza.RTA"
@@ -393,20 +396,13 @@ static unsigned math_bool_out_num;
 //------------------------------------------------------------------------
 //  ќсновные таблицы
 //------------------------------------------------------------------------
-float   tmp_float_in[30];
-int32_t tmp_int_in[30];
-uint8_t tmp_bool_in[30];
-float   tmp_float_out[30];
-int32_t tmp_int_out[30];
-uint8_t tmp_bool_out[30];
 
-
-#define MATH_IO_REAL_IN   tmp_float_in
-#define MATH_IO_INT_IN    tmp_int_in
-#define MATH_IO_BOOL_IN   tmp_bool_in
-#define MATH_IO_REAL_OUT  tmp_float_out
-#define MATH_IO_INT_OUT   tmp_int_out
-#define MATH_IO_BOOL_OUT  tmp_bool_out
+#define MATH_IO_REAL_IN   MYD_U.In_Real
+#define MATH_IO_INT_IN    MYD_U.In_Int
+#define MATH_IO_BOOL_IN   MYD_U.In_Boolean
+#define MATH_IO_REAL_OUT  MYD_Y.Out_Real
+#define MATH_IO_INT_OUT   MYD_Y.Out_Int
+#define MATH_IO_BOOL_OUT  MYD_Y.Out_Boolean
 
 
 
@@ -501,6 +497,9 @@ static bool init_math() {
 		math_bool_out_num = cnt;
 	}
 
+
+	//инициализаци€ ћяƒа
+	MYD_initialize();
 
 	return true;
 }
@@ -1059,7 +1058,7 @@ void dic_write() {
 //------------------------------------------------------------------------
 #define FIU_CODE  120
 
-#define FIU_SETTINGS_OFFSET  (32)
+#define FIU_SETTINGS_OFFSET  (0x48)
 
 static unsigned fiu1_adr, fiu2_adr;
 
@@ -1168,19 +1167,19 @@ static bool init_fiu() {
 		fiu_table_size = 0;
 		return false;
 	}
-
+	
 	if (!fiu_table_size)
 		return true;  //нет настроенных каналов
 
-	
+
 	//проверка наличи€ фиу1 и фиу2
-	if (board_en[0] && RTIn(fiu1_adr + FIU_SETTINGS_OFFSET) != FIU_CODE) {
+	if (board_en[0] && RTIn(fiu1_adr + FIU_SETTINGS_OFFSET + 7) != FIU_CODE) {
 		fiu_table_size = 0;
 		LOG_AND_SCREEN("FIU_1:  NO FIU!! fiu adress: 0x%04X", fiu1_adr);
 		return false;
 	}
 
-	if (board_en[1] && RTIn(fiu2_adr + FIU_SETTINGS_OFFSET) != FIU_CODE) {
+	if (board_en[1] && RTIn(fiu2_adr + FIU_SETTINGS_OFFSET + 7) != FIU_CODE) {
 		fiu_table_size = 0;
 		LOG_AND_SCREEN("FIU_2:  NO FIU!! fiu adress: 0x%04X", fiu2_adr);
 		return false;
@@ -1223,13 +1222,9 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	dic_read();
 
 
-	// STEP      STEP      STEP      STEP      STEP
-
-	/***************/
-	memcpy(tmp_float_out, tmp_float_in, sizeof(tmp_float_out));
-	memcpy(tmp_int_out, tmp_int_in, sizeof(tmp_int_out));
-	memcpy(tmp_bool_out, tmp_bool_in, sizeof(tmp_bool_out));
-	/***************/
+	// ====== вызов ћяƒа  ==================
+	MYD_step();
+	// =====================================
 
 
 	dic_write();

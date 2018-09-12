@@ -17,6 +17,12 @@
       <UniqueIdentifier>{9eb05d55-fc9e-4f25-a028-8b56c3d8b434}</UniqueIdentifier>
       <Extensions>h;hpp;hxx;hm;inl</Extensions>
     </Filter>
+    <Filter Include="Source Files\math">
+      <UniqueIdentifier>{58297f14-3ccc-4422-a46f-ec5c81a7bfa4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\math">
+      <UniqueIdentifier>{0373a3d9-2b51-4da1-8a91-05efe394fc1f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Debug\Surza.map">
@@ -60,6 +66,9 @@
     <ClCompile Include="ai8s.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="math\MYD.c">
+      <Filter>Source Files\math</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="net.h">
@@ -94,6 +103,18 @@
     </ClInclude>
     <ClInclude Include="ai8s.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="math\MYD.h">
+      <Filter>Header Files\math</Filter>
+    </ClInclude>
+    <ClInclude Include="math\MYD_private.h">
+      <Filter>Header Files\math</Filter>
+    </ClInclude>
+    <ClInclude Include="math\MYD_types.h">
+      <Filter>Header Files\math</Filter>
+    </ClInclude>
+    <ClInclude Include="math\rtwtypes.h">
+      <Filter>Header Files\math</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
