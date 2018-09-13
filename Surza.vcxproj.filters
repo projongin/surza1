@@ -69,6 +69,9 @@
     <ClCompile Include="math\MYD.c">
       <Filter>Source Files\math</Filter>
     </ClCompile>
+    <ClCompile Include="math\MYD_data.c">
+      <Filter>Source Files\math</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="net.h">

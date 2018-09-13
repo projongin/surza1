@@ -185,6 +185,7 @@
     <ClCompile Include="logic.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="math\MYD.c" />
+    <ClCompile Include="math\MYD_data.c" />
     <ClCompile Include="net.c" />
     <ClCompile Include="param_tree.c" />
   </ItemGroup>
