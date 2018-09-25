@@ -22,13 +22,13 @@ extern char common_str[1024];
 
 
 #ifndef BLOCK_LOG_AND_SCREEN
-#define LOG_AND_SCREEN(...)    sprintf_s(common_str, sizeof(common_str), __VA_ARGS__); \
-                               LogAndScreen(common_str);
+#define LOG_AND_SCREEN(...)    {sprintf_s(common_str, sizeof(common_str), __VA_ARGS__); \
+                                LogAndScreen(common_str);}
 #else
 #define LOG_AND_SCREEN(...)  ;
 #endif
 
 
-#define LOG(...)    sprintf_s(common_str, sizeof(common_str), __VA_ARGS__); \
-                    Log(common_str);
+#define LOG(...)    {sprintf_s(common_str, sizeof(common_str), __VA_ARGS__); \
+                     Log(common_str);}
 

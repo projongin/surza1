@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <float.h>
 
 #include <Rtk32.h>
 
@@ -24,6 +25,7 @@
 
 #define SETTINGS_FILENAME  "settings.bin"
 #define FIRMWARE_FILENAME  "Surza.RTA"
+#define PARAMS_FILENAME    "params.dat"
 
 
 #pragma pack(push)
@@ -264,6 +266,7 @@ static bool init_adc();
 static bool init_indi();
 static bool init_dic();
 static bool init_fiu();
+static bool init_params();
 
 
 int logic_init() {
@@ -297,6 +300,11 @@ int logic_init() {
 			
 			if (!init_indi()) {
 				LOG_AND_SCREEN("INDI init failed!");
+				break;
+			}
+
+			if (!init_params()) {
+				LOG_AND_SCREEN("PARAMS init failed!");
 				break;
 			}
 			
@@ -1208,6 +1216,286 @@ void fiu_write() {
 
 //---------------------------------------------------------
 
+
+
+
+//------------------------------------------------------------------------
+//   PARAMS
+//------------------------------------------------------------------------
+
+typedef union {
+	float f32;
+	int32_t i32;
+} param_value_t;
+
+typedef struct {
+	unsigned type;
+	unsigned num;
+	param_value_t val;
+	param_value_t val_min;
+	param_value_t val_max;
+	param_value_t val_default;
+} params_t;
+
+
+#define  PARAM_TYPE_FLOAT  0
+#define  PARAM_TYPE_INT    1
+#define  PARAM_TYPE_BOOL   2
+
+
+static params_t* params_ptr;
+static unsigned params_num;
+
+static bool params_read_file();
+static bool params_save_file();
+
+
+static bool init_params() {
+
+	params_ptr = NULL;
+	params_num = 0;
+
+
+	param_tree_node_t* param_node;
+	param_tree_node_t* node;
+	param_tree_node_t* item;
+
+
+
+	param_node = ParamTree_Find(ParamTree_MainNode(), "PARAMS", PARAM_TREE_SEARCH_NODE);
+	if (!param_node) {
+		LOG_AND_SCREEN("No logic params!");
+		return true;   // ѕараметры не используютс€
+	}
+
+
+
+	unsigned n = ParamTree_ChildNum(param_node);
+	if (!n) {
+		LOG_AND_SCREEN("No logic params (0)!");
+		return true;   // нет параметров
+	}
+
+
+	params_ptr = (params_t*)malloc(n * sizeof(params_t));
+	if (!params_ptr) {
+		return false;
+	}
+
+
+	char *str_min;
+	char *str_max;
+	char *str_default;
+	
+
+	bool err = false;
+	n = 0;
+	
+	for (node = ParamTree_Child(param_node); node && !err; node = node->next, n++) {
+
+		item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &params_ptr[n].type) <= 0 || params_ptr[n].type > PARAM_TYPE_BOOL)
+				err = true;
+
+
+		item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &params_ptr[n].num) <= 0)
+				err = true;
+
+
+		item = ParamTree_Find(node, "min", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else str_min = item->value;
+
+		item = ParamTree_Find(node, "max", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else str_max = item->value;
+
+		item = ParamTree_Find(node, "default", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else str_default = item->value;
+
+
+		if (!err) {
+			switch (params_ptr[n].type) {
+			case PARAM_TYPE_FLOAT: err = true;
+				                   if (params_ptr[n].num >= math_real_in_num) break;
+								   if (sscanf_s(str_min, "%f", &(params_ptr[n].val_min.f32)) <= 0) break;
+								   if (sscanf_s(str_max, "%f", &(params_ptr[n].val_max.f32)) <= 0) break;
+								   if (sscanf_s(str_default, "%f", &(params_ptr[n].val_default.f32)) <= 0) break;
+								   if (params_ptr[n].val_min.f32 > params_ptr[n].val_max.f32) break;
+								   if (params_ptr[n].val_default.f32 < params_ptr[n].val_min.f32) break;
+								   if (params_ptr[n].val_default.f32 > params_ptr[n].val_max.f32) break;
+								   err = false;
+								   break;
+			case PARAM_TYPE_INT:   err = true;
+				                   if (params_ptr[n].num >= math_int_in_num) break;
+				                   if (sscanf_s(str_min, "%d", &(params_ptr[n].val_min.i32)) <= 0) break;
+				                   if (sscanf_s(str_max, "%d", &(params_ptr[n].val_max.i32)) <= 0) break;
+				                   if (sscanf_s(str_default, "%d", &(params_ptr[n].val_default.i32)) <= 0) break;
+				                   if (params_ptr[n].val_min.i32 > params_ptr[n].val_max.i32) break;
+				                   if (params_ptr[n].val_default.i32 < params_ptr[n].val_min.i32) break;
+				                   if (params_ptr[n].val_default.i32 > params_ptr[n].val_max.i32) break;
+				                   err = false;
+				                   break;
+			case PARAM_TYPE_BOOL:  err = true;
+				                   if (params_ptr[n].num >= math_bool_in_num) break;
+								   if (sscanf_s(str_default, "%d", &(params_ptr[n].val_default.i32)) <= 0) break;
+								   if (params_ptr[n].val_default.i32 < 0) break;
+								   if (params_ptr[n].val_default.i32 > 1) break;
+								   err = false;
+								   break;
+			default: err = true; break;
+			}
+		}
+
+	}
+
+	if (err) {
+		free(params_ptr);
+		params_ptr = NULL;
+		return false;
+	}
+
+	params_num = n;
+	
+
+	//чтение файла параметров 
+	
+	if (!params_read_file()) {
+		LOG_AND_SCREEN("Default params apply !!!");
+		for(unsigned i=0; i<params_num; i++)
+			params_ptr[i].val.i32 = params_ptr[i].val_default.i32;
+		params_save_file();
+	}
+	
+
+	//применение всех параметров на входы ћяƒа
+	
+	for (unsigned i = 0; i < params_num; i++) {
+		switch (params_ptr[i].type) {
+		case PARAM_TYPE_FLOAT: MATH_IO_REAL_IN[params_ptr[i].num] = params_ptr[i].val.f32; break;
+		case PARAM_TYPE_INT:   MATH_IO_INT_IN[params_ptr[i].num] = params_ptr[i].val.i32; break;
+		case PARAM_TYPE_BOOL:  MATH_IO_BOOL_IN[params_ptr[i].num] = (params_ptr[i].val.i32)?true:false; break;
+		default: break;
+		}
+	}
+
+	return true;
+}
+
+
+
+#pragma pack(push)
+#pragma pack(1) 
+typedef struct {
+	uint32_t crc32;           //контрольна€ сумма по data[params_num*sizeof(param_value_t)]
+	uint8_t  hash[16];        //MD5 хэш соответствующей конфигурации
+	uint32_t params_num;      //размер данных
+							  // data[params_num*sizeof(param_value_t)]
+} params_file_header_t;
+#pragma pack(pop)
+
+
+static bool params_read_file() {
+
+	
+	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR) return false;
+
+	filesystem_fragment_t fragments[2];
+
+	fragments[0].size = sizeof(params_file_header_t);
+	fragments[1].size = 0;
+
+	if (filesystem_read_file_fragments(PARAMS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR) return false;
+
+	params_file_header_t* header = (params_file_header_t*) fragments[0].pointer;
+	param_value_t* val_ptr = (param_value_t*) fragments[1].pointer;
+
+	bool ret = true;
+
+	//проверка считанных данных
+	if (!header
+		|| !val_ptr
+		|| header->params_num != fragments[1].size / sizeof(param_value_t)
+		|| header->params_num != params_num
+		|| !crc32_check((char*)val_ptr, fragments[1].size, header->crc32)
+		|| memcmp(header->hash, settings_header->hash, 16) )
+		ret = false;
+	else {
+	
+		//запись в таблицу прочитанных параметров и их проверка
+		param_value_t *ptr = val_ptr;
+		for (unsigned i = 0; i < params_num && ret; i++, ptr++) {
+
+			switch (params_ptr[i].type) {
+
+			case PARAM_TYPE_FLOAT: 
+				if (!_finite(ptr->f32)
+					|| ptr->f32<params_ptr[i].val_min.f32
+					|| ptr->f32>params_ptr[i].val_max.f32)
+					ret = false;
+				else
+					params_ptr[i].val.f32 = ptr->f32;
+
+				break;
+
+			case PARAM_TYPE_INT:
+				if (ptr->i32<params_ptr[i].val_min.i32
+					|| ptr->i32>params_ptr[i].val_max.i32)
+					ret = false;
+				else
+					params_ptr[i].val.i32 = ptr->i32;
+
+				break;
+
+			case PARAM_TYPE_BOOL:
+				if (ptr->i32<params_ptr[i].val_min.i32 < 0
+					|| ptr->i32>params_ptr[i].val_max.i32 > 1)
+					ret = false;
+				else
+					params_ptr[i].val.i32 = ptr->i32;
+
+				break;
+
+			default: break;
+			}
+
+		}
+
+	}
+
+	//удаление выделенной пам€ти
+	if (header)
+		free(header);
+	if (val_ptr)
+		free(val_ptr);
+
+	return ret;
+}
+
+
+static bool params_save_file() {
+
+	return true;
+}
+
+
+
+
+
+
+
+//------------------------------------------------------------------------
 
 
 
