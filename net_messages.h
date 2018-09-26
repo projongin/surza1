@@ -15,6 +15,7 @@ enum GateMessageType{
 	NET_MSG_SURZA_SETTINGS,
 	NET_MSG_SETTINGS_REQUEST,
 	NET_MSG_INDI,
+	SURZA_SET_PARAM,
 
 	NET_MSG_VYBORG_INFO = 40
 };
@@ -69,6 +70,17 @@ typedef struct msg_type_indi_tt {
 		
 } msg_type_indi_t;
 
+
+
+// set parameter
+typedef struct{
+	uint8_t hash[16]; //config id
+	uint16_t num;   // param num (0-0xfffe),    0xffff - set all to default
+	union {
+		float f32;
+		int32_t i32;
+	} value;
+} msg_type_set_param_t;
 
 
 

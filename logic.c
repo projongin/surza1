@@ -1246,14 +1246,24 @@ typedef struct {
 static params_t* params_ptr;
 static unsigned params_num;
 
+static volatile int params_update_param_flag;
+static volatile unsigned params_update_type;
+static volatile unsigned params_update_num;
+static volatile param_value_t params_update_val;
+
+static void params_apply_all();
+
 static bool params_read_file();
 static bool params_save_file();
+
+void params_recv_callback(net_msg_t* msg, uint64_t channel);
 
 
 static bool init_params() {
 
 	params_ptr = NULL;
 	params_num = 0;
+	params_update_param_flag = 0;
 
 
 	param_tree_node_t* param_node;
@@ -1380,17 +1390,25 @@ static bool init_params() {
 	
 
 	//применение всех параметров на входы ћяƒа
-	
+	params_apply_all();
+
+
+	//прием сообщений дл€ изменени€ параметров
+	net_add_dispatcher((uint8_t)SURZA_SET_PARAM, params_recv_callback);
+
+	return true;
+}
+
+
+static void params_apply_all() {
 	for (unsigned i = 0; i < params_num; i++) {
 		switch (params_ptr[i].type) {
 		case PARAM_TYPE_FLOAT: MATH_IO_REAL_IN[params_ptr[i].num] = params_ptr[i].val.f32; break;
 		case PARAM_TYPE_INT:   MATH_IO_INT_IN[params_ptr[i].num] = params_ptr[i].val.i32; break;
-		case PARAM_TYPE_BOOL:  MATH_IO_BOOL_IN[params_ptr[i].num] = (params_ptr[i].val.i32)?true:false; break;
+		case PARAM_TYPE_BOOL:  MATH_IO_BOOL_IN[params_ptr[i].num] = (params_ptr[i].val.i32) ? true : false; break;
 		default: break;
 		}
 	}
-
-	return true;
 }
 
 
@@ -1474,7 +1492,7 @@ static bool params_read_file() {
 
 	}
 
-	//удаление выделенной пам€ти
+	//освобождение выделенной пам€ти
 	if (header)
 		free(header);
 	if (val_ptr)
@@ -1486,16 +1504,161 @@ static bool params_read_file() {
 
 static bool params_save_file() {
 
-	return true;
+	LOG_AND_SCREEN("Save params...");
+
+	params_file_header_t header;
+
+	memcpy(header.hash, settings_header->hash, 16);
+	header.params_num = params_num;
+
+	size_t val_size = params_num * sizeof(param_value_t);
+
+	param_value_t* val_ptr = (param_value_t*)malloc(val_size);
+	if (!val_ptr) {
+		LOG_AND_SCREEN("malloc() error!");
+		return false;
+	}
+
+	for (unsigned i = 0; i < params_num; i++)
+		val_ptr[i].i32 = params_ptr[i].val.i32;
+
+	header.crc32 = crc32((char*)val_ptr, val_size);
+
+	filesystem_fragment_t fragments[2];
+
+	fragments[0].pointer = (char*)&header;
+	fragments[0].size = sizeof(header);
+	fragments[1].pointer = (char*)val_ptr;
+	fragments[1].size = val_size;
+
+	bool ret = true;
+
+	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR
+		|| filesystem_write_file_fragments(PARAMS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR){
+		LOG_AND_SCREEN("Filesystem error!");
+		ret = false;
+	}
+	else {
+		LOG_AND_SCREEN("Ok");
+	}
+
+	free(val_ptr);
+
+	return ret;
 }
 
 
+void params_recv_callback(net_msg_t* msg, uint64_t channel) {
+
+	if (msg->size < sizeof(msg_type_set_param_t))
+		return;
+
+	msg_type_set_param_t* p_msg = (msg_type_set_param_t*)&msg->data[0];
+
+	if (memcmp(p_msg->hash, settings_header->hash, 16)) {
+		LOG_AND_SCREEN("Can't apply param - configuration does not match!");
+		return;
+	}
+
+	if (p_msg->num>=params_num) {
+		if (p_msg->num==0xffff) {  //reset all to default
+			for (unsigned i = 0; i < params_num; i++)
+				params_ptr[i].val.i32 = params_ptr[i].val_default.i32;
+		}
+		else {
+
+			LOG_AND_SCREEN("Can't apply param - wrong param num!");
+			return;
+		}
+	}
+
+	bool ok = true;
+
+	if(p_msg->num!=0xffff)
+	switch (params_ptr[p_msg->num].type) {
+	case PARAM_TYPE_FLOAT: 
+		if (!_finite(p_msg->value.f32)
+			|| p_msg->value.f32<params_ptr[p_msg->num].val_min.f32
+			|| p_msg->value.f32>params_ptr[p_msg->num].val_max.f32) {
+			ok = false;
+		} else {
+			params_ptr[p_msg->num].val.f32 = p_msg->value.f32;
+		}
+		break;
+
+	case PARAM_TYPE_INT:
+		if (p_msg->value.i32<params_ptr[p_msg->num].val_min.i32
+			|| p_msg->value.i32>params_ptr[p_msg->num].val_max.i32) {
+			ok = false;
+		}
+		else {
+			params_ptr[p_msg->num].val.i32 = p_msg->value.i32;
+		}
+		break;
+
+	case PARAM_TYPE_BOOL:  
+		if (p_msg->value.i32<0
+			|| p_msg->value.i32>1) {
+			ok = false;
+		}
+		else {
+			params_ptr[p_msg->num].val.i32 = p_msg->value.i32;
+		}
+		break;
+
+	default: return;
+	}
+
+	if (!ok) {
+		LOG_AND_SCREEN("Can't apply param - wrong value!");
+		return;
+	}
+	
+	if (!params_save_file())
+		return;
 
 
+	if (atom_get_state(&params_update_param_flag))
+		return;
 
+	if (p_msg->num == 0xffff)
+		params_update_num = 0xffff;
+	else {
+		params_update_type = params_ptr[p_msg->num].type;
+		params_update_num = params_ptr[p_msg->num].num;
+		params_update_val.i32 = params_ptr[p_msg->num].val.i32;
+	}
+	
+	atom_set_state(&params_update_param_flag, 1);
+
+    return;
+}
+
+
+static void params_update() {
+
+	if (!params_update_param_flag)
+		return;
+
+	params_update_param_flag = 0;
+
+	if (params_update_num == 0xffff)
+		params_apply_all();
+	else {
+		switch (params_update_type) {
+		case PARAM_TYPE_FLOAT: MATH_IO_REAL_IN[params_update_num] = params_update_val.f32; break;
+		case PARAM_TYPE_INT:   MATH_IO_INT_IN[params_update_num] = params_update_val.i32; break;
+		case PARAM_TYPE_BOOL:  MATH_IO_BOOL_IN[params_update_num] = (params_update_val.i32) ? true : false; break;
+		default: return;
+		}
+	}
+	
+	return;
+}
 
 
 //------------------------------------------------------------------------
+
 
 
 
@@ -1520,6 +1683,8 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	fiu_write();
 
 	indi_copy();
+
+	params_update();
 
 }
 
