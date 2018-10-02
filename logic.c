@@ -267,6 +267,7 @@ static bool init_indi();
 static bool init_dic();
 static bool init_fiu();
 static bool init_params();
+static bool init_journal();
 
 
 int logic_init() {
@@ -307,6 +308,12 @@ int logic_init() {
 				LOG_AND_SCREEN("PARAMS init failed!");
 				break;
 			}
+
+			if (!init_journal()) {
+				LOG_AND_SCREEN("JOURNAL init failed!");
+				break;
+			}
+			
 			
 
 			ok = true;
@@ -1662,6 +1669,191 @@ static void params_update() {
 
 
 
+//------------------------------------------------------------------------
+//   JOURNAL
+//------------------------------------------------------------------------
+
+typedef struct {
+	uint8_t* value_ptr;  // указатель на флаг события
+              //настройки из конфигурации
+	uint32_t increment;
+	uint32_t decrement;
+	uint32_t block_level;
+	uint32_t block_time;
+	uint32_t block_warning_time;
+	uint32_t edge;
+	          //текущее состояние данных события во время работы
+	uint32_t flag;       // текущее состояние флага события
+	uint32_t prev_flag;  // флаги событий на предыдущем вызове
+	uint32_t change;     // признак возникновения события с учетом фронта
+	uint32_t timer;      // счетчик события
+	uint32_t lock;       // статус заблокирован\разблокирован
+	uint32_t block_warning_timer; // счетчик до предупреждения о слишком долгой блокировке
+} journal_event_data_t;
+
+journal_event_data_t* event_data;
+journal_event_data_t* event_data_end;  // = event_data + event_data_size * sizeof(journal_event_data_t)
+
+unsigned event_data_size;
+
+uint8_t* events_result;
+
+static bool journal_init_ok;
+
+static bool init_journal() {
+
+	journal_init_ok = false;
+	event_data = NULL;
+	event_data_size = 0;
+
+	return true;
+}
+
+#define JOURNAL_EDGE_RISE  0
+#define JOURNAL_EDGE_FALL  1
+#define JOURNAL_EDGE_ANY   2
+
+#define JOURNAL_NO_EVENT       0   // нет события
+#define JOURNAL_EVENT_RISE     1   // передний фронт
+#define JOURNAL_EVENT_FALL     2   // задний фронт
+#define JOURNAL_EVENT_BLOCK    3   // заблокировано
+#define JOURNAL_EVENT_FORCED   4   // принудительное добавление заблокированного события по истечении времени block_warning_time и возникновении события снова
+
+
+
+static void journal_add() {
+
+	if (!journal_init_ok)
+		return;
+
+
+	journal_event_data_t* ptr = event_data;
+	uint8_t* res_ptr = events_result;
+	bool trig = false;
+
+	//для каждого события
+	while (ptr != event_data_end) {
+
+		*res_ptr = JOURNAL_NO_EVENT;  //по-умолчанию нет никаких изменений в результатах
+
+		//получение текущего значения флага события
+		ptr->flag = *(ptr->value_ptr);
+
+		//обнаружение изменения флага события
+		ptr->change = ptr->prev_flag ^ ptr->flag;
+		ptr->prev_flag = ptr->flag;
+
+		//снятие флага изменения если фронт изменения не соответствует настройкам события
+		if (ptr->change) {
+			if ( ((ptr->flag == 1) && (ptr->edge == JOURNAL_EDGE_FALL)) || ((ptr->flag == 0) && (ptr->edge == JOURNAL_EDGE_RISE)))
+				ptr->change = 0;
+			else
+				if(!ptr->lock)
+					trig = true;  //обнаружено новое событие для добавления
+		}
+
+
+		//есть новое событие
+		if (ptr->change) {  //есть изменение события
+
+			if (ptr->lock) {  //если уже было заблокировано
+
+				ptr->timer = ptr->block_time;
+
+				if (ptr->block_warning_timer < ptr->block_warning_time)  //если событие заблокированно не очень долго (меньше block_warning_time), то оно игнорируется
+					ptr->change = 0;    //удаляем изменение для ранее заблокированного события
+				else {  //событие слишком долго было заблокированным и вот возникло опять. добавляем принудительно
+					ptr->block_warning_timer = 0;
+					trig = true;
+					*res_ptr = JOURNAL_EVENT_FORCED;
+				}
+
+			}
+			else {  //событие не было заблокировано
+
+				ptr->timer += ptr->increment;   //инкримент счетчика при возникновении события
+				if (ptr->timer >= ptr->block_level) {  //если счетчик достиг уровня блокирвки, то блокируем событие
+					ptr->timer = ptr->block_time;
+					ptr->lock = 1;
+				}
+
+				//обновление состояния
+				if(ptr->lock)
+					*res_ptr = JOURNAL_EVENT_BLOCK;
+				else *res_ptr = (ptr->flag)?JOURNAL_EDGE_RISE:JOURNAL_EDGE_FALL;
+
+			}
+
+		}
+		else {  // нет нового события
+
+			if (ptr->timer) {  //если таймер события не нулевой
+
+				if (ptr->lock) {   //если событие уже ранее заблокировано, то просто уменьшаю на единицу значение таймера
+					ptr->timer--;
+					//если блокировка была и счетчик досчитал до нуля, то убираю блокировку, обнуляю счетчик до предупреждения о слишком долгой блокировке
+					if (ptr->timer == 0) {
+						ptr->timer = 0;
+						ptr->block_warning_timer = 0;
+					}
+				}
+				else  //если блокировки нет, то уменьшаю на заданный в настройках декремент
+					ptr->timer = (ptr->timer > ptr->decrement) ? (ptr->timer - ptr->decrement) : 0;
+
+			}
+
+		}
+
+
+		//обновление счетчиков предупреждений о слишком долгой блокировке
+		if (ptr->lock) {
+			if (ptr->block_warning_timer<ptr->block_warning_time)
+				ptr->block_warning_timer++;
+		}
+		else
+			ptr->block_warning_timer = 0;
+
+
+
+		//формирование состояния события
+		
+
+		ptr++;
+		res_ptr++;
+	}
+
+
+	//если никаких изменений по событиям нет, то на этом работа закончена
+	if (!trig)
+		return;
+
+
+	//добавление состояния событий в очередь
+	
+
+	
+	//...
+
+
+
+
+}
+
+
+void journal_update() {
+
+	if (!journal_init_ok)
+		return;
+
+
+}
+
+
+//------------------------------------------------------------------------
+
+
+
+
 
 //основная периодическая функция сурзы
 
@@ -1685,6 +1877,8 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	indi_copy();
 
 	params_update();
+
+	journal_add();
 
 }
 

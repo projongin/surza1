@@ -216,6 +216,9 @@ int  main(int argc, char * argv[])
 			indi_send();
 
 
+			journal_update();
+
+
 #if 0
 		   extern volatile int net_test_heap_bufs;
 		   extern void net_test_queues(int* indi);
