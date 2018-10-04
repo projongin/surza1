@@ -81,6 +81,26 @@ int filesystem_read_file_fragments(char* filename, filesystem_fragment_t* fragme
 
 }
 
+int filesystem_read(char* filename, void* data, unsigned size) {
+
+	RTFHANDLE f_handle;
+
+	f_handle = RTFOpen(filename, RTF_READ_ONLY);
+	if (f_handle < 0)
+		return FILESYSTEM_OPEN_ERR;
+
+	unsigned int bytes = 0;
+	bool ok = true;
+
+	if (RTFRead(f_handle, data, size, &bytes) != RTF_NO_ERROR
+		|| bytes != size)
+		ok = false;
+
+	RTFClose(f_handle);
+
+	return ok ? FILESYSTEM_NO_ERR : FILESYSTEM_IO_ERR;
+}
+
 
 int filesystem_read_file(char* filename, void** data, unsigned* size) {
 
@@ -139,3 +159,23 @@ int filesystem_write_file(char* filename, const void* data, unsigned size) {
 	return filesystem_write_file_fragments(filename, &fr, 1);
 }
 
+
+int filesystem_write(char* filename, void* data, unsigned size) {
+
+	RTFHANDLE f_handle;
+
+	f_handle = RTFOpen(filename, RTF_CREATE | RTF_CREATE_ALWAYS | RTF_READ_WRITE);
+	if (f_handle < 0)
+		return FILESYSTEM_OPEN_ERR;
+
+	bool ok = true;
+	unsigned int bytes = 0;
+
+	if (RTFWrite(f_handle, data, size, &bytes) != RTF_NO_ERROR
+		|| bytes != size)
+			ok = false;
+
+	RTFClose(f_handle);
+
+	return ok ? FILESYSTEM_NO_ERR : FILESYSTEM_IO_ERR;
+}

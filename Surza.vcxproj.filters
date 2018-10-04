@@ -72,6 +72,12 @@
     <ClCompile Include="math\MYD_data.c">
       <Filter>Source Files\math</Filter>
     </ClCompile>
+    <ClCompile Include="surza_time.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="launchnum.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="net.h">
@@ -118,6 +124,12 @@
     </ClInclude>
     <ClInclude Include="math\rtwtypes.h">
       <Filter>Header Files\math</Filter>
+    </ClInclude>
+    <ClInclude Include="surza_time.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="launchnum.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -22,9 +22,13 @@ typedef struct {
 
 int filesystem_set_current_dir(char* dir_name);
 
+int filesystem_read(char* filename, void* data, unsigned size);
+
 int filesystem_read_file(char* filename, void** data, unsigned* size);  //function allocs memory
 
 int filesystem_read_file_fragments(char* filename, filesystem_fragment_t* fragments, unsigned num);  //function allocs memory
+
+int filesystem_write(char* filename, void* data, unsigned size);
 
 int filesystem_write_file(char* filename, const void* data, unsigned size);
 

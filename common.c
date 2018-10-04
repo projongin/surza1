@@ -123,6 +123,38 @@ bool net_timeout_expired(RTKTime start, RTKTime stop, RTKTime time) {
 
 
 
+//----------------------------------------------------------
+// global spinlock
+//----------------------------------------------------------
+
+const char* global_spinlock_name = "global_spinlock";
+static RTKSpinlock global_spinlock;
+static DWORD global_spinlock_IntState;
+
+void global_spinlock_init() {
+	int res = RTKCPUs();
+	if (!res) res = 1;
+
+	global_spinlock = RTKCreateSpinlock(res, global_spinlock_name);
+}
+
+
+
+void global_spinlock_lock() {
+	global_spinlock_IntState = RTKLockSpinlock(global_spinlock);
+}
+
+void global_spinlock_unlock() {
+	RTKReleaseSpinlock(global_spinlock, global_spinlock_IntState);
+}
+
+
+//----------------------------------------------------------
+
+
+
+
+
 
 //----------------------------------------------------------
 volatile init_flags_t init_flags;
@@ -134,6 +166,7 @@ void common_init() {
 	init_flags.net_init = false;
 	init_flags.logic_init = false;
 
+	global_spinlock_init();
 }
 
 //----------------------------------------------------------

@@ -3,8 +3,8 @@
 #include <stdint.h>
 
 
-#pragma pack(1)
-
+#pragma pack(push)
+#pragma pack(1) 
 
 //message types
 enum GateMessageType{
@@ -66,6 +66,7 @@ typedef struct msg_type_indi_tt {
 	uint32_t   out_bool_num;
 	uint32_t   out_bool_offset;
 	uint64_t   time;
+	uint32_t   launch_num;
 	// add additional fields here
 		
 } msg_type_indi_t;
@@ -90,8 +91,5 @@ typedef struct msg_type_byborg_info_tt {
 } msg_type_byborg_info_t;
 
 
-
-
-#pragma pack()
-
+#pragma pack(pop)
 
