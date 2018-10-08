@@ -422,6 +422,12 @@ static unsigned math_bool_out_num;
 #define MATH_IO_INT_OUT   MYD_Y.Out_Int
 #define MATH_IO_BOOL_OUT  MYD_Y.Out_Boolean
 
+#define LOGIC_TYPE_REAL_IN    0
+#define LOGIC_TYPE_INT_IN     1
+#define LOGIC_TYPE_BOOL_IN    2
+#define LOGIC_TYPE_REAL_OUT   3
+#define LOGIC_TYPE_INT_OUT    4
+#define LOGIC_TYPE_BOOL_OUT   5
 
 
 static bool init_math() {
@@ -1405,7 +1411,7 @@ static bool init_params() {
 
 
 	//прием сообщений для изменения параметров
-	net_add_dispatcher((uint8_t)SURZA_SET_PARAM, params_recv_callback);
+	net_add_dispatcher((uint8_t)NET_MSG_SET_PARAM, params_recv_callback);
 
 	return true;
 }
@@ -1745,6 +1751,14 @@ static int32_t* (*journal_event_int_myd_ptrs)[];
 static uint8_t* (*journal_event_bool_myd_ptrs)[];
 
 
+static void journal_free_all_memory() {
+	free(event_data);
+	free(events_result);
+	if (journal_event_real_myd_ptrs) free(journal_event_real_myd_ptrs);
+	if (journal_event_int_myd_ptrs) free(journal_event_int_myd_ptrs);
+	if (journal_event_bool_myd_ptrs) free(journal_event_bool_myd_ptrs);
+}
+
 
 static bool init_journal() {
 
@@ -1776,13 +1790,6 @@ static bool init_journal() {
 			return true;   // нет событий
 		}
 	}
-
-
-	data_node = ParamTree_Find(journal_node, "DATA", PARAM_TREE_SEARCH_NODE);
-	if (!data_node) {
-		LOG_AND_SCREEN("No JOURNAL DATA!");   // Нет данных к событиям
-	}
-
 
 
 	//поиск и заполнение всех событий
@@ -1874,25 +1881,61 @@ static bool init_journal() {
 
 	
 	// инициализация данных событий
-
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
-
-	//получение количества данных
 	journal_event_num_real = 0;
 	journal_event_num_int = 0;
 	journal_event_num_bool = 0;
 
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
+	data_node = ParamTree_Find(journal_node, "DATA", PARAM_TREE_SEARCH_NODE);
+	if (!data_node) {
+		LOG_AND_SCREEN("No JOURNAL DATA!");   // Нет данных к событиям
+	}
+	else {
+		//получение количества данных
+
+		err = false;
+		unsigned type, num;
+
+		for (node = ParamTree_Child(data_node); node && !err; node = node->next) {
+
+			item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+			if (!item || !item->value)
+				err = true;
+			else
+				if (sscanf_s(item->value, "%u", &type) <= 0)
+					err = true;
 
 
+			if (!err) {
+				item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+				if (!item || !item->value)
+					err = true;
+				else
+					if (sscanf_s(item->value, "%u", &num) <= 0)
+						err = true;
+			}
+
+
+			if (!err) {
+				switch (type) {
+				case LOGIC_TYPE_REAL_OUT:  if (num < math_real_out_num) journal_event_num_real++; else err = true; break;
+				case LOGIC_TYPE_INT_OUT:   if (num < math_int_out_num) journal_event_num_int++; else err = true; break;
+				case  LOGIC_TYPE_BOOL_OUT: if (num < math_bool_out_num) journal_event_num_bool++; else err = true; break;
+				default: err = true; break;
+				}
+			}
+	
+		}
+
+		if (err) {
+			LOG_AND_SCREEN("JOURNAL data init error! (incorrect data settings)");
+			free(event_data);
+			free(events_result);
+			return false;
+		}		
+
+	}
+
+	
 	//выделение памяти под указатели на данные
 	journal_event_real_myd_ptrs = NULL;
 	journal_event_int_myd_ptrs = NULL;
@@ -1919,22 +1962,58 @@ static bool init_journal() {
 	}
 
 	if (err) {
-		free(event_data);
-		free(events_result);
-		if (journal_event_real_myd_ptrs) free(journal_event_real_myd_ptrs);
-		if (journal_event_int_myd_ptrs) free(journal_event_int_myd_ptrs);
-		if (journal_event_bool_myd_ptrs) free(journal_event_bool_myd_ptrs);
+		journal_free_all_memory();
 		LOG_AND_SCREEN("JOURNAL init error! (data pointers alloc error)");
 		return false;
 	}
 
 	//заполнение массивов указателей
 
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
-	/*******************************************************************/
+	if (journal_event_num_real || journal_event_num_int || journal_event_num_bool) {
+
+		err = false;
+		unsigned type, num;
+		int index_f = 0, index_i = 0, index_b = 0;
+
+		for (node = ParamTree_Child(data_node); node && !err; node = node->next) {
+
+			item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+			if (!item || !item->value)
+				err = true;
+			else
+				if (sscanf_s(item->value, "%u", &type) <= 0)
+					err = true;
+
+
+			if (!err) {
+				item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+				if (!item || !item->value)
+					err = true;
+				else
+					if (sscanf_s(item->value, "%u", &num) <= 0)
+						err = true;
+			}
+
+
+			if (!err) {
+				switch (type) {
+				case LOGIC_TYPE_REAL_OUT:  (*journal_event_real_myd_ptrs)[index_f++] = &math_real_out[num]; break;
+				case LOGIC_TYPE_INT_OUT:   (*journal_event_int_myd_ptrs)[index_i++] = &math_int_out[num]; break;
+				case  LOGIC_TYPE_BOOL_OUT: (*journal_event_bool_myd_ptrs)[index_b++] = &math_bool_out[num]; break;
+				default: err = true; break;
+				}
+			}
+
+		}
+
+		if (err) {
+			LOG_AND_SCREEN("JOURNAL data init internal error!");
+			journal_free_all_memory();
+			return false;
+		}
+
+
+	}
 
 
 	//подсчет смещений для последующего быстрого доступа
@@ -1955,11 +2034,7 @@ static bool init_journal() {
 	//выделение памяти под кольцевое хранилище событий
 	journal_events = (uint8_t*)calloc(EVENTS_BUF_SIZE, journal_event_size);
 	if (!journal_events) {
-		free(event_data);
-		free(events_result);
-		if (journal_event_real_myd_ptrs) free(journal_event_real_myd_ptrs);
-		if (journal_event_int_myd_ptrs) free(journal_event_int_myd_ptrs);
-		if (journal_event_bool_myd_ptrs) free(journal_event_bool_myd_ptrs);
+		journal_free_all_memory();
 		LOG_AND_SCREEN("JOURNAL init error! (alloc journal_events)");
 		return false;
 	}
@@ -2129,9 +2204,9 @@ static void journal_add() {
 	if (journal_event_num_real) {
 		float* dst_ptr = (float*)((uint8_t*)p + journal_event_offset_real);
 		float* dst_ptr_end = dst_ptr + journal_event_num_real;
-		float* src_ptr = (*journal_event_real_myd_ptrs)[0];
+		float** src_ptr = &(*journal_event_real_myd_ptrs)[0];
 		while (dst_ptr != dst_ptr_end) {
-			*dst_ptr = *src_ptr;
+			*dst_ptr = **src_ptr;
 			dst_ptr++;
 			src_ptr++;
 		}
@@ -2141,9 +2216,9 @@ static void journal_add() {
 	if (journal_event_num_int) {
 		int32_t* dst_ptr = (int32_t*)((uint8_t*)p + journal_event_offset_int);
 		int32_t* dst_ptr_end = dst_ptr + journal_event_num_int;
-		int32_t* src_ptr = (*journal_event_int_myd_ptrs)[0];
+		int32_t** src_ptr = &(*journal_event_int_myd_ptrs)[0];
 		while (dst_ptr != dst_ptr_end) {
-			*dst_ptr = *src_ptr;
+			*dst_ptr = **src_ptr;
 			dst_ptr++;
 			src_ptr++;
 		}
@@ -2153,23 +2228,141 @@ static void journal_add() {
 	if (journal_event_num_bool) {
 		uint8_t* dst_ptr = (uint8_t*)((uint8_t*)p + journal_event_offset_bool);
 		uint8_t* dst_ptr_end = dst_ptr + journal_event_num_bool;
-		uint8_t* src_ptr = (*journal_event_bool_myd_ptrs)[0];
+		uint8_t** src_ptr = &(*journal_event_bool_myd_ptrs)[0];
+		unsigned i = 0;
 		while (dst_ptr != dst_ptr_end) {
-			*dst_ptr = *src_ptr;
+			*dst_ptr = **src_ptr;
 			dst_ptr++;
 			src_ptr++;
 		}
 	}
-
 	
 
 }
 
+#define JOURNAL_MAX_MSGS_PER_CYCLE  20
 
 void journal_update() {
 
 	if (!journal_init_ok)
 		return;
+
+	static int last_time = 0;
+	static bool update = false;
+	int new_time = steady_clock_get();
+
+	if (steady_clock_expired(last_time, new_time, JOURNAL_PERIOD_MS * 1000)) {
+		last_time = new_time;
+		update = true;
+	}
+
+	//уходим, если нет соединений - некому отправлять
+	if (net_connections() == 0)
+		return;
+
+	
+	int head = atom_get_state(&journal_events_head);
+	int tail = atom_get_state(&journal_events_tail);
+	unsigned ev_num = (tail <= head) ? (head - tail) : (journal_events_num - tail + head);
+	
+	if (update) {
+		//отправляем периодическое информационное сообщение
+		net_msg_t* msg = net_get_msg_buf(sizeof(msg_type_journal_info_t));
+		if (msg) {
+			msg->type = (uint8_t)NET_MSG_JOURNAL_INFO;
+			msg->subtype = 0;
+			msg_type_journal_info_t* info_msg = (msg_type_journal_info_t*)&msg->data[0];
+
+			memcpy(info_msg->md5_hash, settings_header->hash, 16);
+			info_msg->events_num = ev_num;
+			journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * head);
+			info_msg->head_id = p->unique_id;
+			p = (journal_event_t*)(journal_events + journal_event_size * tail);
+			info_msg->tail_id = p->unique_id;
+
+			net_send_msg(msg, NET_PRIORITY_LOW, NET_BROADCAST_CHANNEL);
+		}
+	}
+
+
+	//если есть новые неотправленные события, то отправляю их (но не более JOURNAL_MAX_MSGS_PER_CYCLE)
+	if (!ev_num)
+		return;
+
+	static int32_t index_to_send = INT32_MAX;
+
+	if (index_to_send == INT32_MAX)
+		index_to_send = tail;
+
+	unsigned msgs_to_send = JOURNAL_MAX_MSGS_PER_CYCLE;
+    
+	while (index_to_send != head && msgs_to_send) {
+
+		journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * index_to_send);
+
+		size_t msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
+		
+		net_msg_t* msg = net_get_msg_buf(msg_size);
+		if (msg) {
+
+
+			
+			msg->type = (uint8_t)NET_MSG_JOURNAL_EVENT;
+			msg->subtype = 0;
+			msg_type_journal_event_t* event_msg = (msg_type_journal_event_t*)&msg->data[0];
+			
+			memcpy(event_msg->md5_hash, settings_header->hash, 16);
+			event_msg->unique_id = p->unique_id;
+			event_msg->time = p->time;
+
+			/*
+			info_msg->events_num = ev_num;
+			journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * head);
+			info_msg->head_id = p->unique_id;
+			p = (journal_event_t*)(journal_events + journal_event_size * tail);
+			info_msg->tail_id = p->unique_id;
+			*/
+
+			if (NET_ERR_NO_ERROR != net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL))
+				break;
+			else {  //отправилось сообщение,  инкремент указателя на следующее для отправки
+				index_to_send++;
+				if (index_to_send == journal_events_num)
+					index_to_send = 0;
+			}
+
+		}
+		else break;
+
+
+	}
+
+
+	
+	/*
+	//добавление состояния событий в очередь
+	int n = journal_events_head;
+	if (journal_events_head == journal_events_tail) {
+		//нет записей в кольцевом буфере
+		n = journal_events_head;
+		journal_events_head++;
+		if (journal_events_head == journal_events_num)
+			journal_events_head = 0;
+	}
+	else {
+		journal_events_head++;
+		if (journal_events_head == journal_events_num)
+			journal_events_head = 0;
+		if (journal_events_head == journal_events_tail) {
+			journal_events_head = n;   //очередь полностью забита. добавлять некуда. возвращаем указатель бошки на прошлую позицию и уходим отсюда нафиг
+			return;
+		}
+		n = journal_events_head;
+	}
+	*/
+
+
+
 
 
 }

@@ -81,7 +81,7 @@ void net_stop(void);
 void net_add_dispatcher(uint8_t type, net_msg_dispatcher dispatcher);
 
 
-//возвращает количество подключенных клиентов, <0 если нет соединений
+//возвращает количество подключенных клиентов, =0 если нет соединений
 volatile unsigned net_connections();
 
 

@@ -17,7 +17,9 @@ int read_settings();
 unsigned SurzaPeriod();  //период сурзы в микросекундах
 
 
-#define  INDI_PERIOD_MS   1000            //частота отправки индикаторов в миллисекундах
+#define  INDI_PERIOD_MS       1000            //частота отправки индикаторов в миллисекундах
+#define  JOURNAL_PERIOD_MS    1000            //частота отправки сообщения msg_type_journal_info_t
+
 
 void indi_send();   //заполнить и послать новые индикаторы
 

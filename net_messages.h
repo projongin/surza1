@@ -15,7 +15,10 @@ enum GateMessageType{
 	NET_MSG_SURZA_SETTINGS,
 	NET_MSG_SETTINGS_REQUEST,
 	NET_MSG_INDI,
-	SURZA_SET_PARAM,
+	NET_MSG_SET_PARAM,
+	NET_MSG_JOURNAL_EVENT,
+	NET_MSG_JOURNAL_INFO,
+	NET_MSG_JOURNAL_REQUEST,
 
 	NET_MSG_VYBORG_INFO = 40
 };
@@ -82,6 +85,45 @@ typedef struct{
 		int32_t i32;
 	} value;
 } msg_type_set_param_t;
+
+
+
+// journal messages
+
+// journal events
+typedef struct {
+	uint8_t  md5_hash[16];
+	uint64_t unique_id;
+	uint64_t time;
+	uint32_t n_of_events;
+	uint32_t events_offset;
+	uint32_t n_of_data_real;   //events data of type REAL
+	uint32_t data_real_offset; //REAL data offset
+	uint32_t n_of_data_int;
+	uint32_t data_int_offset;
+	uint32_t n_of_data_bool;
+	uint32_t data_bool_offset;
+	//add new fields here
+} msg_type_journal_event_t;
+
+// journal info
+typedef struct {
+	uint8_t  md5_hash[16];
+	uint32_t events_num;
+	uint64_t head_id;
+	uint64_t tail_id;
+} msg_type_journal_info_t;
+
+#define  MSG_JOURNAL_REQUEST_GET     0
+#define  MSG_JOURNAL_REQUEST_DELETE  1
+
+// journal request
+typedef struct {
+	uint32_t request;
+	uint64_t event_id;   //delete events till id], or get event #id
+} msg_type_journal_request_t;
+
+
 
 
 
