@@ -1750,6 +1750,9 @@ static float*   (*journal_event_real_myd_ptrs)[];
 static int32_t* (*journal_event_int_myd_ptrs)[];
 static uint8_t* (*journal_event_bool_myd_ptrs)[];
 
+static size_t journal_msg_size;
+
+void journal_request_callback(net_msg_t* msg, uint64_t channel);
 
 static void journal_free_all_memory() {
 	free(event_data);
@@ -2042,10 +2045,17 @@ static bool init_journal() {
 	journal_events_head = 0;
 	journal_events_tail = 0;
 
+
+	//определение длины сообщения
+	journal_msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
 	
 	//получение уникального номера событий
 	journal_event_unique_id = launchnum_get();
 	journal_event_unique_id <<= 32;
+
+
+	//прием запросов на удаление и отправку событий
+	net_add_dispatcher((uint8_t)NET_MSG_JOURNAL_REQUEST, journal_request_callback);
 
 
 	journal_init_ok = true;
@@ -2237,8 +2247,44 @@ static void journal_add() {
 		}
 	}
 	
+}
+
+//заполнение сообщения с событием на отправку
+void journal_fill_msg(net_msg_t* msg, int index) {
+
+	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * index);
+
+	msg->type = (uint8_t)NET_MSG_JOURNAL_EVENT;
+	msg->subtype = 0;
+	msg_type_journal_event_t* event_msg = (msg_type_journal_event_t*)&msg->data[0];
+
+	memcpy(event_msg->md5_hash, settings_header->hash, 16);
+	event_msg->unique_id = p->unique_id;
+	event_msg->time = p->time;
+
+	//состояния событий
+	event_msg->n_of_events = events_num;
+	event_msg->events_offset = sizeof(msg_type_journal_event_t);
+	memcpy((char*)event_msg + event_msg->events_offset, (uint8_t*)p + journal_event_offset_result, events_num);
+
+	//данные real
+	event_msg->n_of_data_real = journal_event_num_int;
+	event_msg->data_real_offset = event_msg->events_offset + events_num;
+	memcpy((char*)event_msg + event_msg->data_real_offset, (uint8_t*)p + journal_event_offset_real, journal_event_num_real * 4);
+
+	//данные int
+	event_msg->n_of_data_int = journal_event_num_int;
+	event_msg->data_int_offset = event_msg->data_real_offset + journal_event_num_real * 4;
+	memcpy((char*)event_msg + event_msg->data_int_offset, (uint8_t*)p + journal_event_offset_int, journal_event_num_int * 4);
+
+	//данные bool
+	event_msg->n_of_data_bool = journal_event_num_bool;
+	event_msg->data_bool_offset = event_msg->data_int_offset + journal_event_num_int * 4;
+	memcpy((char*)event_msg + event_msg->data_bool_offset, (uint8_t*)p + journal_event_offset_bool, journal_event_num_bool);
 
 }
+
+
 
 #define JOURNAL_MAX_MSGS_PER_CYCLE  20
 
@@ -2298,31 +2344,14 @@ void journal_update() {
     
 	while (index_to_send != head && msgs_to_send) {
 
-		journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * index_to_send);
-
-		size_t msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
-		
-		net_msg_t* msg = net_get_msg_buf(msg_size);
+		msgs_to_send--;
+	
+		net_msg_t* msg = net_get_msg_buf(journal_msg_size);
 		if (msg) {
 
+			journal_fill_msg(msg, index_to_send);
 
-			
-			msg->type = (uint8_t)NET_MSG_JOURNAL_EVENT;
-			msg->subtype = 0;
-			msg_type_journal_event_t* event_msg = (msg_type_journal_event_t*)&msg->data[0];
-			
-			memcpy(event_msg->md5_hash, settings_header->hash, 16);
-			event_msg->unique_id = p->unique_id;
-			event_msg->time = p->time;
-
-			/*
-			info_msg->events_num = ev_num;
-			journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * head);
-			info_msg->head_id = p->unique_id;
-			p = (journal_event_t*)(journal_events + journal_event_size * tail);
-			info_msg->tail_id = p->unique_id;
-			*/
-
+			//попытка отправить
 			if (NET_ERR_NO_ERROR != net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL))
 				break;
 			else {  //отправилось сообщение,  инкремент указателя на следующее для отправки
@@ -2334,37 +2363,79 @@ void journal_update() {
 		}
 		else break;
 
-
 	}
-
-
 	
-	/*
-	//добавление состояния событий в очередь
-	int n = journal_events_head;
-	if (journal_events_head == journal_events_tail) {
-		//нет записей в кольцевом буфере
-		n = journal_events_head;
-		journal_events_head++;
-		if (journal_events_head == journal_events_num)
-			journal_events_head = 0;
+}
+
+
+void journal_request_callback(net_msg_t* msg, uint64_t channel) {
+
+	if (msg->size < sizeof(msg_type_journal_request_t))
+		return;
+
+	msg_type_journal_request_t* request = (msg_type_journal_request_t*)&msg->data[0];
+
+	int head = atom_get_state(&journal_events_head);
+	int tail = atom_get_state(&journal_events_tail);
+	unsigned ev_num = (tail <= head) ? (head - tail) : (journal_events_num - tail + head);
+
+	if (!ev_num)
+		return;
+
+	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * head);
+	if (p->unique_id < request->event_id)
+		return;
+	p = (journal_event_t*)(journal_events + journal_event_size * tail);
+	if (p->unique_id > request->event_id)
+		return;
+
+	//поиск требуемого события
+	int index = tail;
+	while (index != tail) {  //поиск требуемого события
+		p = (journal_event_t*)(journal_events + journal_event_size * index);
+		if (p->unique_id == request->event_id)
+			break;
+		index++;
+		if (index == journal_events_num)
+			index = 0;
 	}
-	else {
-		journal_events_head++;
-		if (journal_events_head == journal_events_num)
-			journal_events_head = 0;
-		if (journal_events_head == journal_events_tail) {
-			journal_events_head = n;   //очередь полностью забита. добавлять некуда. возвращаем указатель бошки на прошлую позицию и уходим отсюда нафиг
-			return;
+	if (index == tail)  //не найден по какой-то причине
+		return;
+
+
+	if (request->request == MSG_JOURNAL_REQUEST_GET) {
+
+		//отправляем найденное событие
+		size_t msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
+
+
+		if (net_msg_buf_get_available_space(msg) < sizeof(journal_msg_size)) {
+			msg = net_get_msg_buf(journal_msg_size);
+			if (!msg)
+				return;
 		}
-		n = journal_events_head;
+
+		journal_fill_msg(msg, index);
+
+		net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL);
+
+		return;
 	}
-	*/
 
 
+	if (request->request == MSG_JOURNAL_REQUEST_DELETE) {
 
+		//удаляем все события до найденого, включая и его тоже
+		index++;
+		if (index == journal_events_num)
+			index = 0;
 
+		atom_set_state(&journal_events_tail, index);
 
+		return;
+	}
+
+	return;
 }
 
 
