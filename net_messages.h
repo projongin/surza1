@@ -25,6 +25,12 @@ enum GateMessageType{
 
 
 
+typedef struct {
+	int64_t  secs;   //seconds (unix time)
+	uint32_t nsecs;  //nanoseconds
+} surza_time_t;
+
+
 
 //firmware
 typedef struct msg_type_firmware_tt {
@@ -68,7 +74,7 @@ typedef struct msg_type_indi_tt {
 	uint32_t   out_int_offset;
 	uint32_t   out_bool_num;
 	uint32_t   out_bool_offset;
-	uint64_t   time;
+	surza_time_t time;
 	uint32_t   launch_num;
 	// add additional fields here
 		
@@ -94,7 +100,7 @@ typedef struct{
 typedef struct {
 	uint8_t  md5_hash[16];
 	uint64_t unique_id;
-	uint64_t time;
+	surza_time_t time;
 	uint32_t n_of_events;
 	uint32_t events_offset;
 	uint32_t n_of_data_real;   //events data of type REAL

@@ -1720,7 +1720,7 @@ static uint64_t journal_event_unique_id;
 
 typedef struct {
 	uint64_t unique_id;
-	uint64_t time;
+	surza_time_t time;
 	//массив состояния событий events_result
 	//данные события типа REAL
 	//данные события типа INT
