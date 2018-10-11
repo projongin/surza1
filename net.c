@@ -964,12 +964,18 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 	 for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
 		 if (net_thread_state[i].sock != INVALID_SOCKET) {
 			 net_buf->channel = net_thread_state[i].channel;
-			 send_stack[send_stack_ptr++] = net_buf;
-			 net_buf = net_copy_net_buf(net_buf);
-			 if (net_buf == NULL) {
+
+			 if(send_stack_ptr==0)
+				 send_stack[send_stack_ptr] = net_buf;   //первым уходим текущее сообщение
+			 else
+				 send_stack[send_stack_ptr] = net_copy_net_buf(net_buf);   //для последующих копий - делаем копию текущего
+
+			 if (send_stack[send_stack_ptr] == NULL) {
 				 ret = NET_ERR_MEM_ALLOC;
 				 break;
 			 }
+			 else
+				 send_stack_ptr++;
 		 }
 
 	 if (send_stack_ptr == 0) {
@@ -1231,6 +1237,7 @@ void net_writer_thread_func(void* params) {
 
 	bool exit = false;
 
+
 	while (!exit) {
 
 		switch (state) {
@@ -1270,7 +1277,8 @@ void net_writer_thread_func(void* params) {
 			bytes_left -= ret;
 			ptr += ret;
 			
-			if (bytes_left == 0) {			
+			if (bytes_left == 0) {	
+
 				net_free_net_buf(buf);
 				buf = NULL;
 				state = NET_WRITER_STATE_GET_MSG;				

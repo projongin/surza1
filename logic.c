@@ -1718,6 +1718,10 @@ static bool journal_init_ok;
 
 static uint64_t journal_event_unique_id;
 
+
+#pragma pack(push)
+#pragma pack(1) 
+
 typedef struct {
 	uint64_t unique_id;
 	surza_time_t time;
@@ -1726,6 +1730,8 @@ typedef struct {
 	//данные события типа INT
 	//данные события типа BOOL
 } journal_event_t;
+
+#pragma pack(pop)
 
 static unsigned journal_event_size;   //размер всей структуры journal_event_t, вычисляемый на этапе инициализации журнала
 
@@ -2045,6 +2051,8 @@ static bool init_journal() {
 	journal_events_head = 0;
 	journal_events_tail = 0;
 
+	LOG_AND_SCREEN("JOURNAL memory: %.1f MBytes", (EVENTS_BUF_SIZE*journal_event_size)/(float)(1024*1024));
+
 
 	//определение длины сообщения
 	journal_msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
@@ -2136,7 +2144,7 @@ static void journal_add() {
 				//обновление состояния
 				if(ptr->lock)
 					*res_ptr = JOURNAL_EVENT_BLOCK;
-				else *res_ptr = (ptr->flag)?JOURNAL_EDGE_RISE:JOURNAL_EDGE_FALL;
+				else *res_ptr = (ptr->flag) ? JOURNAL_EVENT_RISE : JOURNAL_EVENT_FALL;
 
 			}
 
@@ -2290,6 +2298,28 @@ void journal_fill_msg(net_msg_t* msg, int index) {
 
 void journal_update() {
 
+	/******************************************/
+#if 0
+	//отладка журнала
+	
+		if (MATH_IO_BOOL_OUT[6])
+			MATH_IO_BOOL_OUT[6] = 0;
+		else
+			MATH_IO_BOOL_OUT[6] = 1;
+
+		if (MATH_IO_BOOL_OUT[5])
+			MATH_IO_BOOL_OUT[5] = 0;
+		else
+			MATH_IO_BOOL_OUT[5] = 1;
+	
+
+	journal_add();
+
+	return;
+#endif
+	/******************************************/
+
+	
 	if (!journal_init_ok)
 		return;
 
@@ -2456,8 +2486,31 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 
 	// ====== вызов МЯДа  ==================
-	MYD_step();
+    MYD_step();
 	// =====================================
+
+
+	/********************************************/
+	//ОТЛАДКА ЖУРНАЛА
+	static unsigned cnt = 0;
+	cnt++;
+
+	if (cnt == 10000) {
+
+		cnt = 0;
+
+		if (MATH_IO_BOOL_OUT[6])
+			MATH_IO_BOOL_OUT[6] = 0;
+		else
+			MATH_IO_BOOL_OUT[6] = 1;
+
+		if (MATH_IO_BOOL_OUT[5])
+			MATH_IO_BOOL_OUT[5] = 0;
+		else
+			MATH_IO_BOOL_OUT[5] = 1;
+
+	}
+	/********************************************/
 
 
 	dic_write();
