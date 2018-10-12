@@ -2276,7 +2276,7 @@ void journal_fill_msg(net_msg_t* msg, int index) {
 	memcpy((char*)event_msg + event_msg->events_offset, (uint8_t*)p + journal_event_offset_result, events_num);
 
 	//‰‡ÌÌ˚Â real
-	event_msg->n_of_data_real = journal_event_num_int;
+	event_msg->n_of_data_real = journal_event_num_real;
 	event_msg->data_real_offset = event_msg->events_offset + events_num;
 	memcpy((char*)event_msg + event_msg->data_real_offset, (uint8_t*)p + journal_event_offset_real, journal_event_num_real * 4);
 
@@ -2489,7 +2489,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
     MYD_step();
 	// =====================================
 
-
+#if 0
 	/********************************************/
 	//Œ“À¿ƒ ¿ ∆”–Õ¿À¿
 	static unsigned cnt = 0;
@@ -2511,7 +2511,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	}
 	/********************************************/
-
+#endif
 
 	dic_write();
 
