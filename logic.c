@@ -296,17 +296,18 @@ int logic_init() {
 				LOG_AND_SCREEN("DIC init failed!");
 				break;
 			}
-
+			
 			if (!init_fiu()) {
 				LOG_AND_SCREEN("FIU init failed!");
 				break;
 			}
 			
+			
 			if (!init_indi()) {
 				LOG_AND_SCREEN("INDI init failed!");
 				break;
 			}
-
+			
 			if (!init_params()) {
 				LOG_AND_SCREEN("PARAMS init failed!");
 				break;
@@ -2158,6 +2159,7 @@ static void journal_add() {
 					//если блокировка была и счетчик досчитал до нуля, то убираю блокировку, обнуляю счетчик до предупреждения о слишком долгой блокировке
 					if (ptr->timer == 0) {
 						ptr->timer = 0;
+						ptr->lock = 0;
 						ptr->block_warning_timer = 0;
 					}
 				}
@@ -2302,6 +2304,7 @@ void journal_update() {
 #if 0
 	//отладка журнала
 	
+	/*
 		if (MATH_IO_BOOL_OUT[6])
 			MATH_IO_BOOL_OUT[6] = 0;
 		else
@@ -2311,11 +2314,27 @@ void journal_update() {
 			MATH_IO_BOOL_OUT[5] = 0;
 		else
 			MATH_IO_BOOL_OUT[5] = 1;
-	
+	*/
+	static bool block = true;
+
+	static unsigned ccc = 0;
+	ccc++;
+
+	if (ccc == 100000) {
+		ccc = 0;
+		block = !block;
+	}
+
+	if (block) {
+		if (MATH_IO_BOOL_OUT[4])
+			MATH_IO_BOOL_OUT[4] = 0;
+		else
+			MATH_IO_BOOL_OUT[4] = 1;
+	}
 
 	journal_add();
 
-	return;
+	
 #endif
 	/******************************************/
 
@@ -2365,29 +2384,32 @@ void journal_update() {
 	if (!ev_num)
 		return;
 
-	static int32_t index_to_send = INT32_MAX;
-
-	if (index_to_send == INT32_MAX)
-		index_to_send = tail;
+	static int32_t last_sent_index = INT32_MAX;
 
 	unsigned msgs_to_send = JOURNAL_MAX_MSGS_PER_CYCLE;
-    
-	while (index_to_send != head && msgs_to_send) {
+
+
+	while (last_sent_index != head && msgs_to_send) {
 
 		msgs_to_send--;
-	
+
+		if (last_sent_index == INT32_MAX)
+			last_sent_index = tail;
+
+		int index = last_sent_index + 1;
+		if (index == journal_events_num)
+			index = 0;	
+
 		net_msg_t* msg = net_get_msg_buf(journal_msg_size);
 		if (msg) {
 
-			journal_fill_msg(msg, index_to_send);
+			journal_fill_msg(msg, index);
 
 			//попытка отправить
 			if (NET_ERR_NO_ERROR != net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL))
 				break;
 			else {  //отправилось сообщение,  инкремент указателя на следующее для отправки
-				index_to_send++;
-				if (index_to_send == journal_events_num)
-					index_to_send = 0;
+				last_sent_index = index;
 			}
 
 		}
@@ -2492,24 +2514,39 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 #if 0
 	/********************************************/
 	//ОТЛАДКА ЖУРНАЛА
-	static unsigned cnt = 0;
-	cnt++;
+	static bool flag = true;
 
-	if (cnt == 10000) {
+	static float f[3] = { 0,0,0 };
+	static int i = 0;
+	static bool b[2] = { false , false };
 
-		cnt = 0;
+	f[0] += 0.1f;  f[1] += 0.2f;  f[2] += 0.3f;
+	i++;
 
-		if (MATH_IO_BOOL_OUT[6])
-			MATH_IO_BOOL_OUT[6] = 0;
-		else
-			MATH_IO_BOOL_OUT[6] = 1;
-
-		if (MATH_IO_BOOL_OUT[5])
-			MATH_IO_BOOL_OUT[5] = 0;
-		else
-			MATH_IO_BOOL_OUT[5] = 1;
-
+	if (i % 2) {
+		b[0] = !b[0];  b[1] = !b[1];
 	}
+
+
+	MATH_IO_REAL_OUT[2] = f[0];
+	MATH_IO_REAL_OUT[5] = f[1];
+	MATH_IO_REAL_OUT[6] = f[2];
+
+	MATH_IO_INT_OUT[2] = i;
+
+	MATH_IO_BOOL_OUT[3] = b[0];
+	MATH_IO_BOOL_OUT[0] = b[1];
+	
+
+
+	flag = !flag;
+
+	if (flag)
+		MATH_IO_BOOL_OUT[4] = 0;
+	else
+		MATH_IO_BOOL_OUT[4] = 1;
+		
+	
 	/********************************************/
 #endif
 
