@@ -78,6 +78,12 @@
     <ClCompile Include="launchnum.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="modbus_rtu.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="delta_hmi.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="net.h">
@@ -129,6 +135,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="launchnum.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="modbus_rtu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="delta_hmi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

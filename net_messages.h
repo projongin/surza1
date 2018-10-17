@@ -60,7 +60,7 @@ typedef struct msg_type_settings_request_tt {
 
 //indi
 typedef struct msg_type_indi_tt {
-	uint32_t   header_size;     //sizeof(msg_type_settings_request_t) (for upward compatibility)
+	uint32_t   header_size;     //sizeof(msg_type_indi_tt) (for upward compatibility)
 	uint8_t    md5_hash[16];    //current settings hash
 	uint32_t   in_real_num;
 	uint32_t   in_real_offset;

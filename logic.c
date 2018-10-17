@@ -7,6 +7,7 @@
 
 #include <Rtk32.h>
 
+#include "global_defines.h"
 
 #include "logic.h"
 #include "net.h"
@@ -19,6 +20,15 @@
 #include "ai8s.h"
 #include "surza_time.h"
 #include "launchnum.h"
+
+#ifdef DELTA_HMI_ENABLE
+#include "delta_hmi.h"
+
+void delta_HMI_init_regs();
+void delta_HMI_copy_indi(const net_msg_t*);
+void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num);
+#endif
+
 
 #include "math\MYD.h" 
 #include "math\rtwtypes.h"
@@ -318,6 +328,12 @@ int logic_init() {
 				break;
 			}
 			
+
+			//дельта опционально
+            #ifdef DELTA_HMI_ENABLE
+			delta_HMI_init_regs();
+			delta_hmi_open(delta_HMI_set_regs);
+            #endif
 			
 
 			ok = true;
@@ -712,6 +728,10 @@ void indi_send() {
 
 		if (!atom_get_state(&indi_msg_fill_new_data)) {
 			//данные сообщения заполнены, отправка сообщения
+
+            #ifdef DELTA_HMI_ENABLE
+			  delta_HMI_init_regs(msg);  //копируем индикаторы для дельты
+            #endif
 
 			net_send_msg(msg, NET_PRIORITY_HIGH, NET_BROADCAST_CHANNEL);
 			state = 0;
@@ -2492,6 +2512,228 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 
 //------------------------------------------------------------------------
+#ifdef DELTA_HMI_ENABLE
+
+#define DELTA_MAX_REGS_TO_SEND   80   //всегда должно быть кратно 2
+
+#define DELTA_REAL_START_REG     100
+#define DELTA_INT_START_REG      500
+#define DELTA_BOOL_START_REG     900
+
+#define DELTA_PERIOD_MS          1000   //период отправки данных
+
+
+static bool delta_HMI_init_flag = false;
+
+float     *delta_HMI_f;
+int32_t   *delta_HMI_i;
+uint8_t   *delta_HMI_b;
+
+void delta_HMI_init_regs() {
+
+	delta_HMI_f = NULL;
+	delta_HMI_i = NULL;
+	delta_HMI_b = NULL;
+
+
+	delta_HMI_f = (float*) malloc(math_real_out_num * 4);
+	delta_HMI_i = (int32_t*) malloc(math_int_out_num * 4);
+	delta_HMI_b = (uint8_t*) malloc(math_bool_out_num);
+
+	if (delta_HMI_f == NULL || delta_HMI_i == NULL || delta_HMI_b == NULL) {
+		if (delta_HMI_f) free(delta_HMI_f);
+		if (delta_HMI_i) free(delta_HMI_i);
+		if (delta_HMI_b) free(delta_HMI_b);
+		return;
+	}
+
+	delta_HMI_init_flag = true;
+}
+
+//копирование свежих индикаторов
+void delta_HMI_copy_indi(const net_msg_t* indi_msg) {
+
+	if (!delta_HMI_init_flag || !indi_msg)
+		return;
+
+	msg_type_indi_t* p = (msg_type_indi_t*)&indi_msg->data;
+
+	memcpy(delta_HMI_f, (uint8_t*)p + p->out_real_offset, math_real_out_num * 4);
+	memcpy(delta_HMI_i, (uint8_t*)p + p->out_int_offset, math_int_out_num * 4);
+	memcpy(delta_HMI_b, (uint8_t*)p + p->out_bool_offset, math_bool_out_num);
+
+}
+
+
+void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
+
+	if (!delta_HMI_init_flag) {
+		*num = 0;
+		return;
+	}
+
+	//  запуск цикла отправки
+	static int last_time = 0;
+	static bool update = false;
+
+	if (!update) {
+		int new_time = steady_clock_get();
+
+		if (steady_clock_expired(last_time, new_time, DELTA_PERIOD_MS * 1000)) {
+			last_time = new_time;
+			update = true;
+		}
+		else {
+
+			*num = 0;  //ничего не отправляем до следующего цикла отправки
+			return;
+		}
+	}
+	//------------------
+
+
+	static unsigned type = 0;
+	static unsigned n=0;
+
+	unsigned num_to_copy=0;
+	
+	switch (type) {
+	case 0:
+		if ((math_real_out_num - n) <= DELTA_MAX_REGS_TO_SEND / 2)
+			num_to_copy = (math_real_out_num - n);
+		else
+			num_to_copy = DELTA_MAX_REGS_TO_SEND / 2;
+
+		for (unsigned i = n; i < n + num_to_copy; i++, ptr += 2)
+			*(float*)ptr = delta_HMI_f[i];
+
+		*num = num_to_copy * 2;
+		*start_reg = DELTA_REAL_START_REG + n * 2;
+
+		n += num_to_copy;
+		if (n >= math_real_out_num) {
+			type = 1;
+			n = 0;
+		}
+
+		break;
+
+	case 1:
+		if ((math_int_out_num - n) <= DELTA_MAX_REGS_TO_SEND / 2)
+			num_to_copy = (math_int_out_num - n);
+		else
+			num_to_copy = DELTA_MAX_REGS_TO_SEND / 2;
+
+		for (unsigned i = n; i < n + num_to_copy; i++, ptr += 2)
+			*(int32_t*)ptr = delta_HMI_i[i];
+
+		*num = num_to_copy * 2;
+		*start_reg = DELTA_INT_START_REG + n * 2;
+
+		n += num_to_copy;
+		if (n >= math_int_out_num) {
+			type = 2;
+			n = 0;
+		}
+
+		break;
+
+	case 2:
+	    {
+		unsigned need_regs = (math_bool_out_num - n);
+		if (need_regs) {
+			need_regs--;
+			need_regs /= 16;
+			need_regs++;
+		}
+
+		if (need_regs <= DELTA_MAX_REGS_TO_SEND)
+			num_to_copy = (math_bool_out_num - n);
+		else {
+			num_to_copy = DELTA_MAX_REGS_TO_SEND * 16;
+			need_regs = DELTA_MAX_REGS_TO_SEND;
+		}
+
+
+		uint16_t mask = 0x0001;
+		for (unsigned i = n; i < n + num_to_copy; i++){
+			
+			if(mask==0x0001)  //тереть именно здесь, чтоб не вылезти за максимально допустимый регистр DELTA_MAX_REGS_TO_SEND
+				*ptr = 0;
+
+			if (delta_HMI_b[i])
+				*ptr |= mask;
+
+			mask <<= 1;
+			if (!mask) {
+				mask = 0x0001;
+				ptr++;
+			}
+			
+		}
+
+		*num = need_regs;
+		*start_reg = DELTA_BOOL_START_REG + n / 16;
+		
+		n += num_to_copy;
+		if (n >= math_bool_out_num) {
+			type = 0;
+			n = 0;
+
+			update = false;    //закончили один цикл отправки всего
+		}
+
+
+	    }
+
+		break;
+
+	default:
+		*num = 0;
+		break;
+	}
+
+
+
+#if 0
+	static unsigned part = 0;
+	part++;
+	if (part == 3)
+		part = 0;
+
+	static int32_t i = 0;
+	static float f = 0.0f;
+	static uint16_t b = 0xE7AA;
+
+
+	switch (part) {
+	case 0: 
+		f += 0.11f;
+		*(float*)ptr = f;
+		*num = 2;
+		*start_reg = 310;
+		break;
+	case 1:
+		i++;
+		*(int32_t*)ptr = i;
+		*num = 2;
+		*start_reg = 210;
+		break;
+	case 2:
+		b = ((b << 1) | ((b & 0x8000)?0x01:0x00));
+		*ptr = b;
+		*num = 1;
+		*start_reg = 110;
+		break;
+	default:
+		*num = 0;
+	}
+
+#endif
+
+
+}
+#endif
 
 
 

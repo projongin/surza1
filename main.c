@@ -20,6 +20,10 @@
 #include "common.h"
 #include "logic.h"
 
+#ifdef DELTA_HMI_ENABLE
+#include "delta_hmi.h"
+#endif
+
 
 
 int RTKAPI keyboard_irq_handler(void* P) {
@@ -79,7 +83,7 @@ int  main(int argc, char * argv[])
 
 	RTKConfig.DefaultIntStackSize = 1024 * 16;
 	RTKConfig.DefaultTaskStackSize = 1024 * 1024;
-	RTKConfig.Flags |= RF_PREEMPTIVE;  //включаем преемптивную многозадачность
+	RTKConfig.Flags |= RF_PREEMPTIVE;  //включаем вытесн€ющую многозадачность
 	RTKernelInit(0);
 	//-------------------------------------------------
 	
@@ -217,6 +221,13 @@ int  main(int argc, char * argv[])
 
 
 			journal_update();
+
+
+            #ifdef DELTA_HMI_ENABLE
+			delta_hmi_update();
+            #endif
+
+
 
 
 #if 0

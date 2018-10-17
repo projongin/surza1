@@ -179,6 +179,7 @@
     <ClCompile Include="boof_pool.c" />
     <ClCompile Include="common.c" />
     <ClCompile Include="crc32.cpp" />
+    <ClCompile Include="delta_hmi.c" />
     <ClCompile Include="filesystem.c" />
     <ClCompile Include="init.c" />
     <ClCompile Include="launchnum.c" />
@@ -187,6 +188,7 @@
     <ClCompile Include="main.c" />
     <ClCompile Include="math\MYD.c" />
     <ClCompile Include="math\MYD_data.c" />
+    <ClCompile Include="modbus_rtu.c" />
     <ClCompile Include="net.c" />
     <ClCompile Include="param_tree.c" />
     <ClCompile Include="surza_time.c" />
@@ -196,6 +198,7 @@
     <ClInclude Include="buf_pool.h" />
     <ClInclude Include="common.h" />
     <ClInclude Include="crc32.h" />
+    <ClInclude Include="delta_hmi.h" />
     <ClInclude Include="filesystem.h" />
     <ClInclude Include="global_defines.h" />
     <ClInclude Include="launchnum.h" />
@@ -205,6 +208,7 @@
     <ClInclude Include="math\MYD_private.h" />
     <ClInclude Include="math\MYD_types.h" />
     <ClInclude Include="math\rtwtypes.h" />
+    <ClInclude Include="modbus_rtu.h" />
     <ClInclude Include="net.h" />
     <ClInclude Include="net_messages.h" />
     <ClInclude Include="param_tree.h" />
