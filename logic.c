@@ -730,7 +730,7 @@ void indi_send() {
 			//данные сообщения заполнены, отправка сообщения
 
             #ifdef DELTA_HMI_ENABLE
-			  delta_HMI_init_regs(msg);  //копируем индикаторы для дельты
+			  delta_HMI_copy_indi(msg);  //копируем индикаторы для дельты
             #endif
 
 			net_send_msg(msg, NET_PRIORITY_HIGH, NET_BROADCAST_CHANNEL);
@@ -2593,7 +2593,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 
 
 	static unsigned type = 0;
-	static unsigned n=0;
+	static unsigned n = 0;
 
 	unsigned num_to_copy=0;
 	
@@ -2801,6 +2801,12 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	params_update();
 
 	journal_add();
+
+
+	/***************/
+	//ВРЕМЕННО !!!  чтение измерителя шага , пока нет сделано это через конфигурацию
+	RTInW(0x440);
+	/***************/
 
 }
 
