@@ -689,7 +689,7 @@ void indi_send() {
 
 			msg  = net_get_msg_buf(indi_msg_size);
 			if (!msg)
-			 break;
+				break;
 
 			msg->type = (uint8_t)NET_MSG_INDI;
 			msg->subtype = 0;
@@ -2363,7 +2363,7 @@ void journal_update() {
 		return;
 
 	static int last_time = 0;
-	static bool update = false;
+	bool update = false;
 	int new_time = steady_clock_get();
 
 	if (steady_clock_expired(last_time, new_time, JOURNAL_PERIOD_MS * 1000)) {
@@ -2390,10 +2390,12 @@ void journal_update() {
 
 			memcpy(info_msg->md5_hash, settings_header->hash, 16);
 			info_msg->events_num = ev_num;
-			journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * head);
-			info_msg->head_id = p->unique_id;
-			p = (journal_event_t*)(journal_events + journal_event_size * tail);
-			info_msg->tail_id = p->unique_id;
+			if (ev_num) {
+				journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * head);
+				info_msg->head_id = p->unique_id;
+				p = (journal_event_t*)(journal_events + journal_event_size * tail);
+				info_msg->tail_id = p->unique_id;
+			}
 
 			net_send_msg(msg, NET_PRIORITY_LOW, NET_BROADCAST_CHANNEL);
 		}
