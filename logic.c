@@ -2838,7 +2838,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	// =====================================
 
 
-	//#if 0
+	#if 0
 	static unsigned cnt = 0;
 	cnt++;
 	if (cnt % 4000 == 0) {
@@ -2852,7 +2852,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 		*(int*)0x0 = 123;
 	}
 
-	//#endif
+	#endif
 
 
 #if 0
