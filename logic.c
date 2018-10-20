@@ -80,6 +80,7 @@ static bool check_settings_msg(msg_type_settings_t* msg, unsigned size) {
 
 
 void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
+	DEBUG_ADD_POINT(309);
 
 	LOG_AND_SCREEN("New settings message received");
 
@@ -116,6 +117,7 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 
 
 void settings_request_callback(net_msg_t* msg, uint64_t channel) {
+	DEBUG_ADD_POINT(310);
 
 	if (msg->size < sizeof(msg_type_settings_request_t))
 		return;
@@ -222,6 +224,7 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 
 
 void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
+	DEBUG_ADD_POINT(311);
 	LOG_AND_SCREEN("New firmware received");
 
 	msg_type_firmware_t* f_msg;
@@ -292,42 +295,49 @@ int logic_init() {
 
 			launchnum_init();
 
+			DEBUG_ADD_POINT(300);
 			if (!init_math()) {
 				LOG_AND_SCREEN("Logic main i/o tables init failed!");
 				break;
 			}
 			
+			DEBUG_ADD_POINT(301);
 			if (!init_adc()) {
 				LOG_AND_SCREEN("ADC init failed!");
 				break;
 			}
 			
+			DEBUG_ADD_POINT(302);
 			if (!init_dic()) {
 				LOG_AND_SCREEN("DIC init failed!");
 				break;
 			}
 			
+			DEBUG_ADD_POINT(303);
 			if (!init_fiu()) {
 				LOG_AND_SCREEN("FIU init failed!");
 				break;
 			}
 			
-			
+			DEBUG_ADD_POINT(304);
 			if (!init_indi()) {
 				LOG_AND_SCREEN("INDI init failed!");
 				break;
 			}
 			
+			DEBUG_ADD_POINT(305);
 			if (!init_params()) {
 				LOG_AND_SCREEN("PARAMS init failed!");
 				break;
 			}
 
+			DEBUG_ADD_POINT(306);
 			if (!init_journal()) {
 				LOG_AND_SCREEN("JOURNAL init failed!");
 				break;
 			}
 			
+			DEBUG_ADD_POINT(307);
 
 			//дельта опционально
             #ifdef DELTA_HMI_ENABLE
@@ -335,6 +345,7 @@ int logic_init() {
 			delta_hmi_open(delta_HMI_set_regs);
             #endif
 			
+			DEBUG_ADD_POINT(308);
 
 			ok = true;
 			break;
@@ -350,6 +361,8 @@ int logic_init() {
 
 	//прием файла новой прошивки
 	net_add_dispatcher((uint8_t)NET_MSG_SURZA_FIRMWARE, new_firmware_callback);
+
+	DEBUG_ADD_POINT(312);
 
 	return ok ? 0 : (-1);
 }
@@ -673,6 +686,7 @@ void indi_send() {
 		update = true;
 	}
 
+	DEBUG_ADD_POINT(200);
 
 	static int state = 0;
 	static net_msg_t* msg = NULL;
@@ -682,6 +696,8 @@ void indi_send() {
 	case 0:   //создать и заполнить новое сообщение
 		if (update) {
 			update = false;
+
+			DEBUG_ADD_POINT(201);
 
 			if (atom_get_state(&indi_msg_fill_new_data))
 				break;
@@ -729,9 +745,13 @@ void indi_send() {
 		if (!atom_get_state(&indi_msg_fill_new_data)) {
 			//данные сообщени€ заполнены, отправка сообщени€
 
+			DEBUG_ADD_POINT(202);
+
             #ifdef DELTA_HMI_ENABLE
 			  delta_HMI_copy_indi(msg);  //копируем индикаторы дл€ дельты
             #endif
+
+			DEBUG_ADD_POINT(203);
 
 			net_send_msg(msg, NET_PRIORITY_HIGH, NET_BROADCAST_CHANNEL);
 			state = 0;
@@ -855,6 +875,8 @@ bool init_adc() {
 
 
 void adc_irq_handler(void){
+
+	DEBUG_ADD_POINT(20);
 
 	//запуск второго ацп
 	if(adc_num>1)
@@ -1439,6 +1461,8 @@ static bool init_params() {
 
 
 static void params_apply_all() {
+	DEBUG_ADD_POINT(357);
+
 	for (unsigned i = 0; i < params_num; i++) {
 		switch (params_ptr[i].type) {
 		case PARAM_TYPE_FLOAT: MATH_IO_REAL_IN[params_ptr[i].num] = params_ptr[i].val.f32; break;
@@ -1587,6 +1611,7 @@ static bool params_save_file() {
 
 
 void params_recv_callback(net_msg_t* msg, uint64_t channel) {
+	DEBUG_ADD_POINT(350);
 
 	if (msg->size < sizeof(msg_type_set_param_t))
 		return;
@@ -1597,6 +1622,8 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 		LOG_AND_SCREEN("Can't apply param - configuration does not match!");
 		return;
 	}
+
+	DEBUG_ADD_POINT(351);
 
 	if (p_msg->num>=params_num) {
 		if (p_msg->num==0xffff) {  //reset all to default
@@ -1611,6 +1638,8 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 			return;
 		}
 	}
+
+	DEBUG_ADD_POINT(352);
 
 	bool ok = true;
 
@@ -1651,6 +1680,8 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 	default: return;
 	}
 
+	DEBUG_ADD_POINT(353);
+
 	if (!ok) {
 		LOG_AND_SCREEN("Can't apply param - wrong value!");
 		return;
@@ -1659,6 +1690,7 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 	if (!params_save_file())
 		return;
 
+	DEBUG_ADD_POINT(354);
 
 	if (atom_get_state(&params_update_param_flag))
 		return;
@@ -1670,6 +1702,8 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 		params_update_num = params_ptr[p_msg->num].num;
 		params_update_val.i32 = params_ptr[p_msg->num].val.i32;
 	}
+
+	DEBUG_ADD_POINT(355);
 	
 	atom_set_state(&params_update_param_flag, 1);
 
@@ -1683,6 +1717,8 @@ static void params_update() {
 		return;
 
 	params_update_param_flag = 0;
+
+	DEBUG_ADD_POINT(356);
 
 	if (params_update_num == 0xffff)
 		params_apply_all();
@@ -2204,11 +2240,15 @@ static void journal_add() {
 		res_ptr++;
 	}
 
+	
+	DEBUG_ADD_POINT(30);
+
 
 	//если никаких изменений по событи€м нет, то на этом работа закончена
 	if (!trig)
 		return;
 
+	DEBUG_ADD_POINT(31);
 
 	//добавление состо€ни€ событий в очередь
 	int n = journal_events_head;
@@ -2230,6 +2270,7 @@ static void journal_add() {
 		n = journal_events_head;
 	}
 
+	DEBUG_ADD_POINT(32);
 
 	//заполнение структуры событи€
 	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size*n);
@@ -2239,6 +2280,7 @@ static void journal_add() {
 	//копирование состо€ний событий
 	memcpy((uint8_t*)p + journal_event_offset_result, events_result, events_num);
 
+	DEBUG_ADD_POINT(33);
 
 	//копирование данных real
 	if (journal_event_num_real) {
@@ -2276,11 +2318,14 @@ static void journal_add() {
 			src_ptr++;
 		}
 	}
+
+	DEBUG_ADD_POINT(34);
 	
 }
 
 //заполнение сообщени€ с событием на отправку
 void journal_fill_msg(net_msg_t* msg, int index) {
+	DEBUG_ADD_POINT(217);
 
 	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * index);
 
@@ -2311,6 +2356,8 @@ void journal_fill_msg(net_msg_t* msg, int index) {
 	event_msg->n_of_data_bool = journal_event_num_bool;
 	event_msg->data_bool_offset = event_msg->data_int_offset + journal_event_num_int * 4;
 	memcpy((char*)event_msg + event_msg->data_bool_offset, (uint8_t*)p + journal_event_offset_bool, journal_event_num_bool);
+
+	DEBUG_ADD_POINT(218);
 
 }
 
@@ -2371,6 +2418,8 @@ void journal_update() {
 		update = true;
 	}
 
+	DEBUG_ADD_POINT(204);
+
 	//уходим, если нет соединений - некому отправл€ть
 	if (net_connections() == 0)
 		return;
@@ -2381,9 +2430,13 @@ void journal_update() {
 	unsigned ev_num = (tail <= head) ? (head - tail) : (journal_events_num - tail + head);
 	
 	if (update) {
+		DEBUG_ADD_POINT(205);
+
 		//отправл€ем периодическое информационное сообщение
 		net_msg_t* msg = net_get_msg_buf(sizeof(msg_type_journal_info_t));
 		if (msg) {
+			DEBUG_ADD_POINT(206);
+
 			msg->type = (uint8_t)NET_MSG_JOURNAL_INFO;
 			msg->subtype = 0;
 			msg_type_journal_info_t* info_msg = (msg_type_journal_info_t*)&msg->data[0];
@@ -2396,11 +2449,14 @@ void journal_update() {
 				p = (journal_event_t*)(journal_events + journal_event_size * tail);
 				info_msg->tail_id = p->unique_id;
 			}
+			DEBUG_ADD_POINT(207);
 
-			net_send_msg(msg, NET_PRIORITY_LOW, NET_BROADCAST_CHANNEL);
+			net_send_msg(msg, NET_PRIORITY_LOWEST, NET_BROADCAST_CHANNEL);
 		}
 	}
 
+
+	DEBUG_ADD_POINT(208);
 
 	//если есть новые неотправленные событи€, то отправл€ю их (но не более JOURNAL_MAX_MSGS_PER_CYCLE)
 	if (!ev_num)
@@ -2412,6 +2468,7 @@ void journal_update() {
 
 
 	while (last_sent_index != head && msgs_to_send) {
+		DEBUG_ADD_POINT(209);
 
 		msgs_to_send--;
 
@@ -2424,6 +2481,7 @@ void journal_update() {
 
 		net_msg_t* msg = net_get_msg_buf(journal_msg_size);
 		if (msg) {
+			DEBUG_ADD_POINT(210);
 
 			journal_fill_msg(msg, index);
 
@@ -2434,6 +2492,8 @@ void journal_update() {
 				last_sent_index = index;
 			}
 
+			DEBUG_ADD_POINT(211);
+
 		}
 		else break;
 
@@ -2443,6 +2503,8 @@ void journal_update() {
 
 
 void journal_request_callback(net_msg_t* msg, uint64_t channel) {
+
+	DEBUG_ADD_POINT(212);
 
 	if (msg->size < sizeof(msg_type_journal_request_t))
 		return;
@@ -2456,12 +2518,16 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 	if (!ev_num)
 		return;
 
+	DEBUG_ADD_POINT(213);
+
 	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * head);
 	if (p->unique_id < request->event_id)
 		return;
 	p = (journal_event_t*)(journal_events + journal_event_size * tail);
 	if (p->unique_id > request->event_id)
 		return;
+
+	DEBUG_ADD_POINT(214);
 
 	//поиск требуемого событи€
 	int index = tail;
@@ -2476,6 +2542,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 	if (index == tail)  //не найден по какой-то причине
 		return;
 
+	DEBUG_ADD_POINT(215);
 
 	if (request->request == MSG_JOURNAL_REQUEST_GET) {
 
@@ -2489,6 +2556,8 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 				return;
 		}
 
+		DEBUG_ADD_POINT(216);
+
 		journal_fill_msg(msg, index);
 
 		net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL);
@@ -2498,6 +2567,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 
 	if (request->request == MSG_JOURNAL_REQUEST_DELETE) {
+		DEBUG_ADD_POINT(219);
 
 		//удал€ем все событи€ до найденого, включа€ и его тоже
 		index++;
@@ -2558,6 +2628,8 @@ void delta_HMI_copy_indi(const net_msg_t* indi_msg) {
 	if (!delta_HMI_init_flag || !indi_msg)
 		return;
 
+	DEBUG_ADD_POINT(358);
+
 	msg_type_indi_t* p = (msg_type_indi_t*)&indi_msg->data;
 
 	memcpy(delta_HMI_f, (uint8_t*)p + p->out_real_offset, math_real_out_num * 4);
@@ -2573,6 +2645,8 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 		*num = 0;
 		return;
 	}
+
+	DEBUG_ADD_POINT(359);
 
 	//  запуск цикла отправки
 	static int last_time = 0;
@@ -2593,6 +2667,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 	}
 	//------------------
 
+	DEBUG_ADD_POINT(360);
 
 	static unsigned type = 0;
 	static unsigned n = 0;
@@ -2601,6 +2676,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 	
 	switch (type) {
 	case 0:
+		DEBUG_ADD_POINT(361);
 		if ((math_real_out_num - n) <= DELTA_MAX_REGS_TO_SEND / 2)
 			num_to_copy = (math_real_out_num - n);
 		else
@@ -2621,6 +2697,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 		break;
 
 	case 1:
+		DEBUG_ADD_POINT(362);
 		if ((math_int_out_num - n) <= DELTA_MAX_REGS_TO_SEND / 2)
 			num_to_copy = (math_int_out_num - n);
 		else
@@ -2641,6 +2718,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 		break;
 
 	case 2:
+		DEBUG_ADD_POINT(363);
 	    {
 		unsigned need_regs = (math_bool_out_num - n);
 		if (need_regs) {
@@ -2745,6 +2823,8 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 
 static void MAIN_LOGIC_PERIOD_FUNC() {
 
+	DEBUG_ADD_POINT(21);
+
 	steady_clock_update((int)SurzaPeriod());
 
 
@@ -2752,8 +2832,28 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 
 	// ====== вызов ћяƒа  ==================
+	DEBUG_ADD_POINT(22);
     MYD_step();
+	DEBUG_ADD_POINT(23);
 	// =====================================
+
+
+	//#if 0
+	static unsigned cnt = 0;
+	cnt++;
+	if (cnt % 4000 == 0) {
+		//for (unsigned i = 0; i < math_bool_out_num; i++)
+		unsigned n = cnt / 4000;
+		n = n % math_bool_out_num;
+		MATH_IO_BOOL_OUT[n] = MATH_IO_BOOL_OUT[n] ? 0 : 1;
+	}
+
+	if (cnt == 25000) {
+		*(int*)0x0 = 123;
+	}
+
+	//#endif
+
 
 #if 0
 	/********************************************/
@@ -2794,17 +2894,23 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	/********************************************/
 #endif
 
+	DEBUG_ADD_POINT(24);
 	dic_write();
 
+	DEBUG_ADD_POINT(25);
 	fiu_write();
 
+	DEBUG_ADD_POINT(26);
 	indi_copy();
 
+	DEBUG_ADD_POINT(27);
 	params_update();
 
+	DEBUG_ADD_POINT(28);
 	journal_add();
 
 
+	DEBUG_ADD_POINT(29);
 	/***************/
 	//¬–≈ћ≈ЌЌќ !!!  чтение измерител€ шага , пока нет сделано это через конфигурацию
 	RTInW(0x440);

@@ -6,6 +6,8 @@
 #include <rtcom.h>
 #include <Rtk32.h> 
 
+#include "common.h"
+
 
 
 #define MODBUS_PRIORITY (RTKConfig.MainPriority+10)
@@ -146,6 +148,7 @@ static int Modbus_check_crc16(uint8_t *buf, uint16_t buf_size, uint8_t* crc) {
 
 
 void Modbus_Init(){
+	DEBUG_ADD_POINT(330);
 
 	//создаю очереди приемки и отправки
 	Modbus_send_msgs = RTKCreateMailbox(sizeof(modbus_message_t), QUEUE_MAX_LENGTH, send_mailbox_name);
@@ -165,6 +168,8 @@ void Modbus_Init(){
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void Modbus_DeInit(){
+	DEBUG_ADD_POINT(331);
+
 	bool status = true;
 	modbus_message_t msg;
 
@@ -195,6 +200,7 @@ void Modbus_DeInit(){
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void Modbus_Open(int com_port, int baudrate, int parity, int stops, int irq, unsigned int io_base) {
+	DEBUG_ADD_POINT(332);
 
 	//usec_per_byte = (DWORD)ceil((float)1000000*11/(float)baudrate);
 	usec_per_byte = (DWORD)(1000000 * 11) / baudrate;
@@ -223,6 +229,8 @@ void Modbus_Open(int com_port, int baudrate, int parity, int stops, int irq, uns
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 void Modbus_Close() {
+	DEBUG_ADD_POINT(333);
+
 	RTKWait(mutex);
 	port_state = COM_STATUS_CLOSED;
 	RTKSignal(mutex);
@@ -256,11 +264,14 @@ void RTKAPI Modbus_poll_thread(void* param) {
 	int attempts, res;
 	uint8_t local_port_state;
 
+	DEBUG_ADD_POINT(334);
 
 	while (true) {
 
 
 		RTKGet(Modbus_send_msgs, &msg);
+
+		DEBUG_ADD_POINT(335);
 
 
 		RTKWait(mutex);
@@ -353,6 +364,7 @@ void RTKAPI Modbus_poll_thread(void* param) {
 
 		}
 
+		DEBUG_ADD_POINT(336);
 
 		if (res == 0 && !exit) {
 			// успешный обмен
@@ -360,6 +372,8 @@ void RTKAPI Modbus_poll_thread(void* param) {
 			RTKPut(Modbus_recv_msgs, &msg);
 		}
 		else {
+			DEBUG_ADD_POINT(337);
+
 			msg.status = STATUS_FAULT;
 			RTKPut(Modbus_recv_msgs, &msg);
 		}
@@ -372,6 +386,7 @@ void RTKAPI Modbus_poll_thread(void* param) {
 
 
 static int Modbus_SetReg() {
+	DEBUG_ADD_POINT(338);
 
 	uint8_t modbus_msg[MAX_REGS * 2 + 10];
 	RTKTime timeout;
@@ -449,6 +464,7 @@ static int Modbus_SetReg() {
 
 
 static int Modbus_GetRegs() {
+	DEBUG_ADD_POINT(339);
 
 	uint8_t modbus_msg[MAX_REGS * 2 + 6];
 	RTKTime timeout;
@@ -529,6 +545,7 @@ static int Modbus_GetRegs() {
 
 
 static int Modbus_SetRegs() {
+	DEBUG_ADD_POINT(340);
 
 	uint8_t modbus_msg[MAX_REGS * 2 + 10];
 	RTKTime timeout;
@@ -613,6 +630,7 @@ static int Modbus_SetRegs() {
 
 
 static int Modbus_SetCoils() {
+	DEBUG_ADD_POINT(341);
 
 	uint8_t modbus_msg[MAX_REGS * 2 + 10];
 	RTKTime timeout;
@@ -703,6 +721,7 @@ static int Modbus_SetCoils() {
 
 
 static int Modbus_GetCoils() {
+	DEBUG_ADD_POINT(342);
 
 	uint8_t modbus_msg[MAX_REGS * 2 + 6];
 	RTKTime timeout;
@@ -784,6 +803,7 @@ static int Modbus_GetCoils() {
 
 
 static int Modbus_SetCoil() {
+	DEBUG_ADD_POINT(343);
 
 	uint8_t modbus_msg[MAX_REGS * 2 + 10];
 	RTKTime timeout;
@@ -861,6 +881,7 @@ static int Modbus_SetCoil() {
 
 
 bool Modbus_message(const struct modbus_message_t* msg_data) {
+	DEBUG_ADD_POINT(344);
 	if (!RTKPutCond(Modbus_send_msgs, msg_data)) return false;
 	else return true;
 }
@@ -869,6 +890,7 @@ bool Modbus_message(const struct modbus_message_t* msg_data) {
 
 
 static int Modbus_recv_bytes(uint8_t* buf, unsigned num) {
+	DEBUG_ADD_POINT(345);
 
 	RTKTime timeout = RTKGetTime() + get_bytes_time(num);
 	COMData data;
@@ -979,6 +1001,8 @@ adr[1]=ptr[0];
 
 
 static void Modbus_SendException(uint8_t adr, uint8_t error_code, uint8_t exception_code) {
+	DEBUG_ADD_POINT(346);
+
 	uint8_t buf[5];
 	int bytes = 3;
 
@@ -993,6 +1017,7 @@ static void Modbus_SendException(uint8_t adr, uint8_t error_code, uint8_t except
 }
 
 static void Modbus_Send(uint8_t* msg, unsigned bytes) {
+	DEBUG_ADD_POINT(347);
 
 	Modbus_fast_crc16(&msg[bytes], &msg[0], bytes);
 	bytes += 2;

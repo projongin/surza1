@@ -164,6 +164,7 @@ static net_msg_t* save_callback_buf = NULL;
 
 //иницализация
 bool net_buf_pool_init() {
+	DEBUG_ADD_POINT(100);
 	
 	net_buf_pool = buf_pool_add_pool(NET_BUF_SIZE, NET_BUF_POOL_SIZE);
 	if (net_buf_pool < 0)
@@ -181,10 +182,13 @@ volatile int net_test_heap_bufs = 0;
 
 //получение нового буфера
 net_buf_t* net_get_net_buf(size_t len) {
+	DEBUG_ADD_POINT(101);
 
 	net_buf_t* buf;
 
 	if (len <= NET_BUF_SIZE) {
+		DEBUG_ADD_POINT(102);
+
 		//получаем новый буфер из пула
 		buf = buf_pool_get(net_buf_pool);
 		if (buf == NULL)
@@ -195,6 +199,7 @@ net_buf_t* net_get_net_buf(size_t len) {
 	}
 	else {
 		//делаем новый буфер в куче
+		DEBUG_ADD_POINT(103);
 		
 		buf = malloc(len);
 		if (buf == NULL)
@@ -209,6 +214,7 @@ net_buf_t* net_get_net_buf(size_t len) {
 		//!!!!!!!!!!!
 #endif
 	}
+	DEBUG_ADD_POINT(104);
 
 	return buf;
 }
@@ -216,13 +222,16 @@ net_buf_t* net_get_net_buf(size_t len) {
 
 //возврат буфера
 void net_free_net_buf(net_buf_t* buf) {
+	DEBUG_ADD_POINT(105);
 
 	if (buf == NULL) return;
 
 	if (buf->buf_type == NET_BUF_TYPE_POOL) {
+		DEBUG_ADD_POINT(106);
 		buf_pool_free(net_buf_pool, buf);
 	}
 	else if (buf->buf_type == NET_BUF_TYPE_HEAP) {
+		DEBUG_ADD_POINT(107);
 		free(buf);
 #if 0
 		//!!!!!!!--------
@@ -230,19 +239,27 @@ void net_free_net_buf(net_buf_t* buf) {
 		//!!!!!!!!!!!
 #endif
 	}
+	DEBUG_ADD_POINT(108);
 	
 }
 
 //получение нового буфера и инициализация копией buf,  возвращает  NULL при неудаче выделения нового буфера
 net_buf_t* net_copy_net_buf(const net_buf_t* buf) {
+	DEBUG_ADD_POINT(109);
 
 	if (buf == NULL)
 		return NULL;
 
+	DEBUG_ADD_POINT(110);
+
 	net_buf_t* buf_copy = net_get_net_buf(buf->buf_size);
+
+	DEBUG_ADD_POINT(111);
 
 	if (buf_copy != NULL)
 		memcpy(buf_copy, buf, buf->buf_size);
+
+	DEBUG_ADD_POINT(112);
 
 	return buf_copy;
 }
@@ -251,11 +268,13 @@ net_buf_t* net_copy_net_buf(const net_buf_t* buf) {
 
 //получение net_buf_t* из net_msg_t*
 net_buf_t* net_get_net_buf_from_msg(const net_msg_t* ptr) {
+	DEBUG_ADD_POINT(113);
 	return ptr==NULL?NULL:((net_buf_t*)((uint8_t*)ptr-NET_BUF_TO_MSG_OFFSET));
 }
 
 //получение нового буфера под сообщение с длиной данных len
 net_msg_t* net_get_msg_buf(uint32_t len) {
+	DEBUG_ADD_POINT(114);
 	
 	net_buf_t* buf = net_get_net_buf(NET_BUF_OVERHEAD + len);
 	if (buf == NULL)
@@ -264,12 +283,15 @@ net_msg_t* net_get_msg_buf(uint32_t len) {
 	net_msg_t* msg = (net_msg_t*)(buf->net_msg.msg_data);
 
 	msg->size = len;
+
+	DEBUG_ADD_POINT(115);
 	
 	return msg;
 }
 
 //возврат буфера
 void net_free_msg_buf(net_msg_t* buf) {
+	DEBUG_ADD_POINT(116);
 
 	if (buf == NULL)
 		return;
@@ -277,16 +299,23 @@ void net_free_msg_buf(net_msg_t* buf) {
 	if (save_callback_buf == buf)
 		save_callback_buf = NULL;
 
+	DEBUG_ADD_POINT(117);
+
 	net_free_net_buf(net_get_net_buf_from_msg(buf));
+
+	DEBUG_ADD_POINT(118);
 }
 
 //получить максимально возможный размер данных для сохранения в сообщении
 size_t net_msg_buf_get_available_space(const net_msg_t* buf) {
+	DEBUG_ADD_POINT(119);
 
 	if (buf == NULL)
 		return 0;
 
 	net_buf_t* net_buf = net_get_net_buf_from_msg(buf);
+
+	DEBUG_ADD_POINT(120);
 
 	return net_buf->buf_size - NET_BUF_OVERHEAD;
 };
@@ -332,6 +361,7 @@ static const net_settings_t net_settings_default = {
 
 //загрузка сетевых настроек из дерева настроек
 bool net_load_settings() {
+	DEBUG_ADD_POINT(121);
 
 	//net_settings_t net_settings;
 
@@ -382,6 +412,8 @@ bool net_load_settings() {
 	memcpy(net_settings.DNSServer, net_settings_default.LocalIP, 4);
 	net_settings.DefaultGateway[3] = 1;
 	net_settings.DNSServer[3] = 1;
+
+	DEBUG_ADD_POINT(122);
 	
 	return true;
 }
@@ -424,6 +456,8 @@ static int net_skip_type_num[NET_MAIN_QUEUE_NUM];
 
 
 void net_main_queue_init() {
+	DEBUG_ADD_POINT(123);
+
 	for (int j = 0; j < NET_MAIN_QUEUE_NUM; j++) {
 		for (int i = 0; i < NET_QUEUE_PRIORITY_NUM; i++) {
 			priority_queue_head[j][i] = NULL;
@@ -438,19 +472,25 @@ void net_main_queue_init() {
 }
 
 bool net_main_queue_is_full(net_main_queue_type_t queue) {
+	DEBUG_ADD_POINT(124);
 	return net_queue_node_stack_ptr[queue] == 0 ? true : false;
 }
 
 int net_add_to_main_queue(net_main_queue_type_t queue, net_msg_priority_t priority, uint64_t type, bool front, void* ptr) {
+	DEBUG_ADD_POINT(125);
+
 	if (net_main_queue_is_full(queue))
 		return -1;
 	
+	DEBUG_ADD_POINT(126);
+
 	net_queue_node_t* node = net_queue_node_stack[queue][--net_queue_node_stack_ptr[queue]];
 	node->next = NULL;
 	node->ptr = ptr;
 	node->type = type;
 
 	if (front) {
+		DEBUG_ADD_POINT(127);
 
 		//добавляем в начало
 		node->next = priority_queue_head[queue][priority];
@@ -459,6 +499,7 @@ int net_add_to_main_queue(net_main_queue_type_t queue, net_msg_priority_t priori
 			priority_queue_tail[queue][priority] = priority_queue_head[queue][priority];
 
 	} else {
+		DEBUG_ADD_POINT(128);
 
 		//добавляем в конец
 		if (priority_queue_tail[queue][priority] != NULL) {
@@ -477,11 +518,14 @@ int net_add_to_main_queue(net_main_queue_type_t queue, net_msg_priority_t priori
 }
 
 void* net_remove_from_main_queue(net_main_queue_type_t queue, net_msg_priority_t priority) {
+	DEBUG_ADD_POINT(129);
 
 	net_queue_node_t* node = priority_queue_head[queue][priority];
 	net_queue_node_t* prev = NULL;
 	
 	if (net_skip_type_num[queue] > 0) {
+		DEBUG_ADD_POINT(130);
+
 		while (node) {
 			//надо пропускать некоторые типы сообщений
 			int i;
@@ -496,8 +540,12 @@ void* net_remove_from_main_queue(net_main_queue_type_t queue, net_msg_priority_t
 				break;
 		}
 	}
+
+	DEBUG_ADD_POINT(131);
 	
 	if (node) {
+		DEBUG_ADD_POINT(132);
+
 		if (prev == NULL) {  //забираем самый первый
 			priority_queue_head[queue][priority] = node->next;
 			if (priority_queue_head[queue][priority] == NULL)
@@ -507,27 +555,39 @@ void* net_remove_from_main_queue(net_main_queue_type_t queue, net_msg_priority_t
 			if (priority_queue_tail[queue][priority] == node)
 				priority_queue_tail[queue][priority] = prev;
 		}
+
+		DEBUG_ADD_POINT(133);
 		
 		net_queue_node_stack[queue][net_queue_node_stack_ptr[queue]] = node;
 		net_queue_node_stack_ptr[queue]++;
 	}
+
+	DEBUG_ADD_POINT(134);
 
 	return node?node->ptr:NULL;
 }
 
 
 void* net_remove_from_main_queue_by_priority(net_main_queue_type_t queue) {
+	DEBUG_ADD_POINT(135);
+
 	void* ptr=NULL;
 
     for (int pr = 0; pr<NET_QUEUE_PRIORITY_NUM; pr++) {
+		DEBUG_ADD_POINT(136);
+
 		ptr = net_remove_from_main_queue(queue, pr);
 		if (ptr) return ptr;
 	}
+
+	DEBUG_ADD_POINT(137);
 
 	return NULL;
 }
 
 void net_main_queue_skip_type(net_main_queue_type_t queue, uint64_t type) {
+	DEBUG_ADD_POINT(138);
+
 	if (net_skip_type_num[queue] < NET_MAX_CONNECTIONS_ALLOWED) {
 		net_skip_type[queue][net_skip_type_num[queue]] = type;
 		net_skip_type_num[queue]++;
@@ -535,6 +595,7 @@ void net_main_queue_skip_type(net_main_queue_type_t queue, uint64_t type) {
 }
 
 void net_main_queue_skip_reset(net_main_queue_type_t queue) {
+	DEBUG_ADD_POINT(139);
 	net_skip_type_num[queue] = 0;
 }
 
@@ -631,11 +692,13 @@ static net_realtime_callback realtime_callback = NULL;
 
 
 static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buffer_size) {
+	DEBUG_ADD_POINT(140);
 
 	if(realtime_callback)
 	  if (*(word*)(data + 0x0C) == 0x0008 &&   //IP  
 		  data[0x17] == NET_REALTIME_IP_PROTOCOL_NUM) // свой протокол, не совпадающий с известными зарегистрированными
 	  {
+		  DEBUG_ADD_POINT(141);
 		  int offset = 14 + (data[14] & 0xf) * 4;  //начало данных = смещение заголовка IP + размер самого заголовка IP
 		  realtime_callback(data + offset, length - offset);  //за счет паддинга на мелких фреймах ethernet передаваемая длина может быть больше реального количества полезных байт
 		  return 0;
@@ -717,8 +780,12 @@ static void RTKAPI net_tcp_server_func(void* param);
 
 void InterfaceCleanup(void)
 {
+	DEBUG_ADD_POINT(142);
+
 	if (interface != SOCKET_ERROR)
 	{
+		DEBUG_ADD_POINT(143);
+
 		const int One = 1;
 		xn_interface_opt(interface, IO_HARD_CLOSE, (const char *)&One, sizeof(int));
 		xn_interface_close(interface);
@@ -730,6 +797,8 @@ void InterfaceCleanup(void)
 
 //инициализация контроллера и создание tcp сервера
 net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_callback) {
+	DEBUG_ADD_POINT(144);
+
 	int res;
 
 	
@@ -818,6 +887,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 		net_callbacks[i] = NULL;
 	
 
+	DEBUG_ADD_POINT(145);
 
 	//создание пула буферов
 	if (!net_buf_pool_init()) {
@@ -825,6 +895,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 		goto err;
 	}
 
+	DEBUG_ADD_POINT(146);
 
 	//инициализация мютексов, очередей и т.п.
 	
@@ -846,6 +917,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 
 	}
 	
+	DEBUG_ADD_POINT(147);
 	
 	//установка колбека реального времени
 	if (real_callback) {
@@ -853,19 +925,19 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 		realtime_callback = real_callback;
 	}
 
-
+	DEBUG_ADD_POINT(148);
 
 	//создание общих очередей для входных и выходных сообщений, а также указателей на сообщения определенных приоритетов
 	net_main_queue_init();
 
 	send_queue_mutex = RTKOpenSemaphore(ST_MUTEX, 1, SF_COPY_NAME, "net_send_queue_mutex");
 
-
+	DEBUG_ADD_POINT(149);
 	
     //создание потока tcp сервера
 	net_tcp_server_handler  = RTKRTLCreateThread(net_tcp_server_func, NET_TCP_SERVER_PRIORITY,  100000, TF_NO_MATH_CONTEXT, NULL, net_server_thread_name);
 
-
+	DEBUG_ADD_POINT(150);
 
 	//-------------------------------------
 
@@ -880,22 +952,27 @@ err:
 
 //разрешение получения сообщений
 void net_start() {
+	DEBUG_ADD_POINT(151);
 	atom_set_state(&callback_en, 1);
 }
 //запрет получения сообщений
 void net_stop() {
+	DEBUG_ADD_POINT(152);
 	atom_set_state(&callback_en, 0);
 }
 
 
 //добавление обработчика сообщений определенного типа
 void net_add_dispatcher(uint8_t type, net_msg_dispatcher dispatcher) {
+	DEBUG_ADD_POINT(153);
 	net_callbacks[type] = dispatcher;
 }
 
 
 //возвращает количество подключенных клиентов, 0 если нет соединений
 volatile unsigned net_connections() {
+	DEBUG_ADD_POINT(154);
+
 	unsigned c = 0;
 
 	for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
@@ -911,6 +988,7 @@ volatile unsigned net_connections() {
 
 //посылка нового сообщения
 net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t channel) {
+	DEBUG_ADD_POINT(155);
 
 	if (save_callback_buf == msg)
 		save_callback_buf = NULL;
@@ -936,9 +1014,12 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 
 	net_err_t ret = NET_ERR_NO_ERROR;
 
+	DEBUG_ADD_POINT(156);
+
 	//добавление в соответствии с приоритетом
 
 	if (net_buf->channel!=NET_BROADCAST_CHANNEL) {  //обычное сообщение
+		DEBUG_ADD_POINT(157);
 
 	    //захват мютекса очереди
 		RTKWait(send_queue_mutex);
@@ -954,12 +1035,13 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 
 	} 
 	
-	
+		
 	 //широковещательное.   копируем и отправляем на все доступные каналы
 		
 	 net_buf_t* send_stack[NET_MAX_CONNECTIONS_ALLOWED];
 	 int send_stack_ptr = 0;
 	 
+	 DEBUG_ADD_POINT(158);
 
 	 for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
 		 if (net_thread_state[i].sock != INVALID_SOCKET) {
@@ -978,6 +1060,9 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 				 send_stack_ptr++;
 		 }
 
+	 DEBUG_ADD_POINT(159);
+
+
 	 if (send_stack_ptr == 0) {
 		 //нет активных соединений,
 		 net_free_net_buf(net_buf);
@@ -991,6 +1076,8 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 		            
 		return ret;
 	 }
+
+	 DEBUG_ADD_POINT(160);
 
 	 //отправка на все найденные каналы
 	 for (int i = 0; i < send_stack_ptr; i++) {
@@ -1009,6 +1096,8 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 		 send_stack[i] = NULL;
 
 	 }
+
+	 DEBUG_ADD_POINT(161);
 		 
 	 if (ret != NET_ERR_NO_ERROR) {
 		 // удалить буферы
@@ -1017,6 +1106,7 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 				 net_free_net_buf(send_stack[i]);
 	 }
 	 
+	 DEBUG_ADD_POINT(162);
 
 	 return ret;
 	 
@@ -1037,6 +1127,7 @@ enum net_reader_states_t {
  
 
 void net_reader_thread_func(void* params) {
+	DEBUG_ADD_POINT(163);
 
 	net_thread_state_t* data = (net_thread_state_t*)params;
 	
@@ -1156,6 +1247,7 @@ void net_reader_thread_func(void* params) {
 			  break;
 
 		  case NET_READER_STATE_CHECK_MSG:   //проверка сообщения
+			       DEBUG_ADD_POINT(164);
 
 			        //если не проходит проверку - выходим
 			       if (memcmp(&buf->net_msg.label, data_ptr-4, 4)) {
@@ -1175,6 +1267,7 @@ void net_reader_thread_func(void* params) {
 			  break;
 
 		  case NET_READER_STATE_SAVE_MSG:   //добавляем сообщение в очередь с проверкой ее забитости
+			         DEBUG_ADD_POINT(165);
 			         
 			         buf_type = buf->buf_type;
 			  
@@ -1204,9 +1297,13 @@ void net_reader_thread_func(void* params) {
 
 	}
 
+	DEBUG_ADD_POINT(166);
+
 
 	if (pool_buf) net_free_net_buf(pool_buf);
 	if (heap_buf) net_free_net_buf(heap_buf);
+
+	DEBUG_ADD_POINT(167);
 
 	shutdown(data->sock, 0);
 	
@@ -1237,6 +1334,8 @@ void net_writer_thread_func(void* params) {
 
 	bool exit = false;
 
+	DEBUG_ADD_POINT(168);
+
 
 	while (!exit) {
 
@@ -1250,6 +1349,8 @@ void net_writer_thread_func(void* params) {
 				exit = true;
 				break;
 			}
+
+			DEBUG_ADD_POINT(169);
 
 			//есть сообщения для передачи, подготавливаю для передачи
 			net_msg_t* msg = (net_msg_t*)&buf->net_msg.msg_data;
@@ -1294,10 +1395,13 @@ void net_writer_thread_func(void* params) {
 
 	}
 
+	DEBUG_ADD_POINT(170);
 
 	if (buf) net_free_net_buf(buf);
 
 	shutdown(data->sock, 1);
+
+	DEBUG_ADD_POINT(171);
 
 
 	atom_dec(&data->thread_cnt_atomic);
@@ -1326,6 +1430,8 @@ static void RTKAPI net_tcp_server_func(void* param){
 	uint64_t u64;
 	uint16_t u16;
 
+	DEBUG_ADD_POINT(172);
+
 
 	while (true) {
 
@@ -1338,6 +1444,7 @@ static void RTKAPI net_tcp_server_func(void* param){
 			if (serv_socket == INVALID_SOCKET)
 				break;
 
+			DEBUG_ADD_POINT(173);
 
 			//опции сокета
 			ret = -1;
@@ -1371,11 +1478,15 @@ static void RTKAPI net_tcp_server_func(void* param){
 				break;
 			}
 
+			DEBUG_ADD_POINT(174);
+
 			state = NET_TCP_SERVER_ACCEPT;
 			break;
 
 
 		case NET_TCP_SERVER_ACCEPT:
+
+			DEBUG_ADD_POINT(175);
 
 			//ищем свободный канал
 			thread_data = NULL;
@@ -1400,6 +1511,8 @@ static void RTKAPI net_tcp_server_func(void* param){
 				state = NET_TCP_SERVER_CLOSE;
 				break;
 			}
+
+			DEBUG_ADD_POINT(176);
 
 			//опции сокета 
 			while (true) {
@@ -1441,6 +1554,8 @@ static void RTKAPI net_tcp_server_func(void* param){
             atom_set_state(&thread_data->thread_cnt_atomic, 2);
             
             
+			DEBUG_ADD_POINT(177);
+
             thread_data->writer_handle = RTKRTLCreateThread(net_writer_thread_func, NET_TCP_WRITER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_writer_thread_name);
             thread_data->reader_handle = RTKRTLCreateThread(net_reader_thread_func, NET_TCP_READER_PRIORITY_HIGH, 200000, TF_NO_MATH_CONTEXT, thread_data, net_reader_thread_name);
             
@@ -1449,6 +1564,7 @@ static void RTKAPI net_tcp_server_func(void* param){
 
 
 		case NET_TCP_SERVER_CLOSE:
+			DEBUG_ADD_POINT(178);
 
 			closesocket(serv_socket);
 			serv_socket = INVALID_SOCKET;
@@ -1466,6 +1582,7 @@ static void RTKAPI net_tcp_server_func(void* param){
 
 
 void net_connection_control_func() {
+	DEBUG_ADD_POINT(179);
 
 	//проверка состояния читающих\записывающих потоков
 
@@ -1475,6 +1592,8 @@ void net_connection_control_func() {
 				//проверка на необходимость подчистить все после завершения потоков
 				net_thread_state_t *data = &net_thread_state[i];
 				if (atom_get_state(&data->thread_cnt_atomic) == 0) {
+					DEBUG_ADD_POINT(180);
+
 					// все мютексы должны быть свободны к данному моменту. их не использую
 					// очищаю очередь приема канала
 					RTKBool res;
@@ -1490,6 +1609,8 @@ void net_connection_control_func() {
 						}
 					} while (res == TRUE);
 
+					DEBUG_ADD_POINT(181);
+
 					// очищаю очередь на передачу
 					do {
 						net_buf = NULL;
@@ -1499,10 +1620,13 @@ void net_connection_control_func() {
 						}
 					} while (res == TRUE);
 
+					DEBUG_ADD_POINT(182);
+
 					// закрываю сокет
 					closesocket(data->sock);
 					data->sock = INVALID_SOCKET;
 
+					DEBUG_ADD_POINT(183);
 				}
 
 			}
@@ -1510,10 +1634,13 @@ void net_connection_control_func() {
 }
 
 void net_read_recv_queues() {
+	DEBUG_ADD_POINT(184);
 
 	for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
 		if (net_thread_state[i].sock != INVALID_SOCKET) {
 			net_thread_state_t *data = &net_thread_state[i];
+
+			DEBUG_ADD_POINT(185);
 
 			RTKBool res;
 			net_buf_t* net_buf;
@@ -1538,11 +1665,14 @@ void net_read_recv_queues() {
 								
 						}
 
+						DEBUG_ADD_POINT(186);
 
 						net_free_net_buf(net_buf);
 
 					}
 					else {
+
+						DEBUG_ADD_POINT(187);
 
 						// добавить сообщение в общую очередь приема
 						net_buf->net_msg.priority = (net_buf->net_msg.priority < NET_QUEUE_PRIORITY_NUM ? net_buf->net_msg.priority : NET_PRIORITY_BACKGROUND);
@@ -1560,6 +1690,7 @@ void net_read_recv_queues() {
 }
 
 void net_write_send_queues() {
+	DEBUG_ADD_POINT(188);
 
 	net_buf_t* net_buf = NULL;
 	int ch;
@@ -1570,6 +1701,8 @@ void net_write_send_queues() {
 		RTKWait(send_queue_mutex);
 
 		  net_buf = net_remove_from_main_queue_by_priority(NET_MAIN_QUEUE_SEND);
+
+		  DEBUG_ADD_POINT(189);
 
 		  if (net_buf) {
 			  //поиск соответствующего канала
@@ -1587,8 +1720,12 @@ void net_write_send_queues() {
 
 			  } else {
 				  
+				  DEBUG_ADD_POINT(190);
+
 				  res = RTKPutCond(net_thread_state[ch].write_mailbox, &net_buf);
 				  if (res == FALSE) {
+					  DEBUG_ADD_POINT(191);
+
 					  //возвращаем буфер в общую очередь
 					  net_add_to_main_queue(NET_MAIN_QUEUE_SEND, net_buf->net_msg.priority, net_buf->channel, true, net_buf);
 					  //без проверки возвращаемого значения, так как место точно должно быть - забрали только что из очереди буфер и удерживаем мютекс - никто не мог добавить новый на его место
@@ -1603,6 +1740,8 @@ void net_write_send_queues() {
 		RTKSignal(send_queue_mutex);
 
 	} while (net_buf);
+
+	DEBUG_ADD_POINT(192);
 	
 	//удаляем фильтр выборки
 	net_main_queue_skip_reset(NET_MAIN_QUEUE_SEND);
@@ -1610,6 +1749,7 @@ void net_write_send_queues() {
 
 
 void net_dispatch_msgs() {
+	DEBUG_ADD_POINT(193);
 
 	if (!atom_get_state(&callback_en))
 		return;
@@ -1622,6 +1762,8 @@ void net_dispatch_msgs() {
 		//сохранить указатель на сообщение, передаваемый в обработчик, чтоб блокировать его удаление по завершению обработчика, если внутри него вызывались net_free_msg_buf или net_send_msg с этим же буфером
 		net_buf = net_remove_from_main_queue_by_priority(NET_MAIN_QUEUE_RECV);
 
+		DEBUG_ADD_POINT(194);
+
 		if (net_buf) {
 
 			save_callback_buf = (net_msg_t*)net_buf->net_msg.msg_data;
@@ -1631,6 +1773,8 @@ void net_dispatch_msgs() {
 					default_callback(save_callback_buf, net_buf->channel);
 			}
 			else net_callbacks[save_callback_buf->type](save_callback_buf, net_buf->channel);
+
+			DEBUG_ADD_POINT(195);
 
 			//удаляю буфер после завершения обработчика
 			if (save_callback_buf != NULL) {
@@ -1647,6 +1791,7 @@ void net_dispatch_msgs() {
 
 //периодическая функция обработки
 net_err_t net_update() {
+	DEBUG_ADD_POINT(196);
 
 	//проверить состояние всех потоков
 	net_connection_control_func();

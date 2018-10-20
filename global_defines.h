@@ -11,3 +11,8 @@
 // включение отправку индикаторов на дельту
 #define DELTA_HMI_ENABLE
 
+
+
+
+//включение отладки page fault
+#define  CPU_EXCEPTION_14_DEBUG

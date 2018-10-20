@@ -97,6 +97,7 @@ uint16_t write_buf[200];
 modbus_message_t msg_wr, msg_rd, msg;
 
 void delta_hmi_update() {
+	DEBUG_ADD_POINT(250);
 	static uint8_t wr_label = 123;
 	static uint8_t rd_label = 234;
 
@@ -119,6 +120,7 @@ void delta_hmi_update() {
 			rd_label++;
 			delta_hmi_rd((uint16_t*)msg.data_buf, msg.Count);
 			rd_flag = false;
+			DEBUG_ADD_POINT(251);
 			//Log("DELTA READ OK!");
 		}
 		else if (msg.status != STATUS_FAULT
@@ -129,9 +131,11 @@ void delta_hmi_update() {
 			wr_label++;
 			wr_flag = false;
 			//Log("DELTA WRITE OK!");
+			DEBUG_ADD_POINT(252);
 		}
 		else {
 			cnt_err++;
+			DEBUG_ADD_POINT(253);
 			// Log("DELTA FAULT!");
 			if (msg.msg_type == MSG_TYPE_READ_REGS
 				&& msg.label == rd_label)
@@ -151,15 +155,19 @@ void delta_hmi_update() {
 		msg_wr.msg_type = MSG_TYPE_WRITE_REGS;
 		//msg_wr.Start = WR_START_REG;
 		//msg_wr.Count = N_OF_WR_REGS;
+		DEBUG_ADD_POINT(254);
 		if (delta_hmi_wr((uint16_t*)msg_wr.data_buf, &msg_wr.Start, &msg_wr.Count)) {
+			DEBUG_ADD_POINT(255);
 			wr_num_regs = msg_wr.Count;
 			if (Modbus_message((const struct modbus_message_t*)&msg_wr)) {
+				DEBUG_ADD_POINT(256);
 				wr_flag = true;
 			}
 		}
 	}
 
 	if (!rd_flag) {
+		DEBUG_ADD_POINT(257);
 
 		//чтения с панели пока не нужно
 #if 0

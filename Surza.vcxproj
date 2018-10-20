@@ -178,6 +178,7 @@
     <ClCompile Include="ai8s.c" />
     <ClCompile Include="boof_pool.c" />
     <ClCompile Include="common.c" />
+    <ClCompile Include="cpu_exception.cpp" />
     <ClCompile Include="crc32.cpp" />
     <ClCompile Include="delta_hmi.c" />
     <ClCompile Include="filesystem.c" />
@@ -197,6 +198,7 @@
     <ClInclude Include="ai8s.h" />
     <ClInclude Include="buf_pool.h" />
     <ClInclude Include="common.h" />
+    <ClInclude Include="cpu_exception.h" />
     <ClInclude Include="crc32.h" />
     <ClInclude Include="delta_hmi.h" />
     <ClInclude Include="filesystem.h" />

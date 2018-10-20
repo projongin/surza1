@@ -72,3 +72,13 @@ bool steady_clock_expired(int32_t start_time, int32_t stop_time, uint32_t timeou
 void global_spinlock_lock();
 void global_spinlock_unlock();
 //-------------------------------
+
+
+
+
+#ifdef CPU_EXCEPTION_14_DEBUG
+#include "cpu_exception.h"
+#define DEBUG_ADD_POINT(x) debug_add_point((x));
+#else
+#define DEBUG_ADD_POINT(x)
+#endif

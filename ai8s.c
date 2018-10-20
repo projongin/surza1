@@ -6,7 +6,6 @@
 #include "log.h"
 
 
-
 //настраиваемый номер прерывания
 #define AI8S_IRQ                 6
 

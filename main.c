@@ -96,6 +96,11 @@ int  main(int argc, char * argv[])
 	RTKDisableIRQ(1);
 
 	
+#ifdef CPU_EXCEPTION_14_DEBUG
+	cpu_exception_init();
+#endif
+
+	DEBUG_ADD_POINT(1);
 
 	//==============================================
 	// инициализация общего системного
@@ -111,6 +116,8 @@ int  main(int argc, char * argv[])
 	// инициализация вспомогательного функционала (буферов, номера запуска и т.п.
 	//========================================================================================
 	LOG_AND_SCREEN("Surza start");	
+
+	DEBUG_ADD_POINT(2);
 
 	bool init_ok;
 	do {
@@ -131,6 +138,8 @@ int  main(int argc, char * argv[])
 	//========================================================================================
 	// чтение файлов настроек
 	//========================================================================================
+	DEBUG_ADD_POINT(3);
+
 	if (init_flags.base_init) {
 		init_flags.settings_init = (read_settings() >= 0) ? true : false;
 		if (init_flags.settings_init) {
@@ -144,6 +153,7 @@ int  main(int argc, char * argv[])
 	//========================================================================================
 	// инициализация сети
 	//========================================================================================
+	DEBUG_ADD_POINT(4);
 	if (init_flags.base_init) {
 		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, tmp_net_realtime_callback)) {
 			LOG_AND_SCREEN("net_init()  fail!");
@@ -158,6 +168,7 @@ int  main(int argc, char * argv[])
 	//========================================================================================
 	// инициализация логики, в том числе периферии (ADC, DIC, FIU)
 	//========================================================================================
+	DEBUG_ADD_POINT(5);
 	if (init_flags.base_init && init_flags.net_init) {
 		if (logic_init() < 0) {
 			LOG_AND_SCREEN("Logic init fail!");
@@ -182,6 +193,8 @@ int  main(int argc, char * argv[])
 	}
 #endif
 
+	DEBUG_ADD_POINT(6);
+
 	//собака
 	wdt_init();
 
@@ -191,6 +204,8 @@ int  main(int argc, char * argv[])
 		net_start();
 
 	
+	DEBUG_ADD_POINT(7);
+
 	//---------------------------------
 	//тесты модулей
 	//printf("\n buf_pool_test() = %d\n", buf_pool_test());
@@ -214,21 +229,23 @@ int  main(int argc, char * argv[])
 			// основной цикл работы
 			//============================================================================================================
 
+		    DEBUG_ADD_POINT(10);
 			net_update();
 
-
+			DEBUG_ADD_POINT(12);
 			indi_send();
 
-
+			DEBUG_ADD_POINT(14);
 			journal_update();
 
 
             #ifdef DELTA_HMI_ENABLE
+			DEBUG_ADD_POINT(16);
 			delta_hmi_update();
             #endif
 
 
-
+			
 
 #if 0
 		   extern volatile int net_test_heap_bufs;
