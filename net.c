@@ -1501,6 +1501,9 @@ static void RTKAPI net_tcp_server_func(void* param){
 				RTKDelay(CLKMilliSecsToTicks(1000));
 				break;
 			}
+
+			//установка счетчиков потоков сразу, чтоб net_connection_control_func() не посчитала соединение завершенным (так как сокет будет !=INVALID_SOCKET и thread_cnt_atomic==0 )
+			atom_set_state(&thread_data->thread_cnt_atomic, 2);
 			
 			thread_data->sock = accept(serv_socket, (struct sockaddr*)&remote, &remote_len);
 			if (thread_data->sock == INVALID_SOCKET) {
@@ -1550,9 +1553,6 @@ static void RTKAPI net_tcp_server_func(void* param){
             u16 = ((thread_data->channel + 1) & 0xffff);
             u64 += u16;
             thread_data->channel = u64;
-            
-            atom_set_state(&thread_data->thread_cnt_atomic, 2);
-            
             
 			DEBUG_ADD_POINT(177);
 
@@ -1604,8 +1604,11 @@ void net_connection_control_func() {
 						if (res && net_buf) {
 							// добавить сообщение в общую очередь приема
 							net_buf->net_msg.priority = (net_buf->net_msg.priority < NET_QUEUE_PRIORITY_NUM ? net_buf->net_msg.priority : NET_PRIORITY_BACKGROUND);
-							if (net_add_to_main_queue(NET_MAIN_QUEUE_RECV, net_buf->net_msg.priority, net_buf->channel, false, net_buf) < 0)
+							if(((net_msg_t*)net_buf->net_msg.msg_data)->type <= (uint8_t)NET_SPECIAL_MSG_TYPE_MAX_NUM)
 								net_free_net_buf(net_buf);
+							else
+								if (net_add_to_main_queue(NET_MAIN_QUEUE_RECV, net_buf->net_msg.priority, net_buf->channel, false, net_buf) < 0)
+									net_free_net_buf(net_buf);
 						}
 					} while (res == TRUE);
 

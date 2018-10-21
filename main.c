@@ -61,8 +61,8 @@ unsigned msg_cnt = 0;
 unsigned msg_cnt_old = 0;
 void tmp_net_callback(net_msg_t* msg, uint64_t channel) {
 	msg_cnt++;
-	LOG_AND_SCREEN("MSG channel=%016llX   type=%u, subtype=%u,  data_size=%u bytes", channel, msg->type, msg->subtype, msg->size);
-	net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
+//	LOG_AND_SCREEN("MSG channel=%016llX   type=%u, subtype=%u,  data_size=%u bytes", channel, msg->type, msg->subtype, msg->size);
+//	net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
 }
 
 void tmp_net_realtime_callback(const void* data, int length) {}
