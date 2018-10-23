@@ -221,24 +221,25 @@ int  main(int argc, char * argv[])
 	time_prev = time;
 
 	
-
 	while (true) {
 		WATCHDOG_UPDATE();
 
 			//============================================================================================================
 			// основной цикл работы
 			//============================================================================================================
-
+	
 		    DEBUG_ADD_POINT(10);
 			net_update();
 
+	
 			DEBUG_ADD_POINT(12);
 			indi_send();
 
+	
 			DEBUG_ADD_POINT(14);
 			journal_update();
 
-
+	
             #ifdef DELTA_HMI_ENABLE
 			DEBUG_ADD_POINT(16);
 			delta_hmi_update();
@@ -246,6 +247,18 @@ int  main(int argc, char * argv[])
 
 
 			
+
+
+#if 0
+			extern int test_time;
+			time = RTKGetTime();
+			if (CLKTicksToSeconds(time) != CLKTicksToSeconds(time_prev)) {
+				time_prev = time;
+
+				int t = test_time;
+				LOG_AND_SCREEN("clks = %u, %.3f us", t, t/500.0f);
+			}
+#endif
 
 #if 0
 		   extern volatile int net_test_heap_bufs;

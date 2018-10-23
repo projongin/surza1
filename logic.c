@@ -2424,7 +2424,6 @@ void journal_update() {
 	if (net_connections() == 0)
 		return;
 
-	
 	int head = atom_get_state(&journal_events_head);
 	int tail = atom_get_state(&journal_events_tail);
 	unsigned ev_num = (tail <= head) ? (head - tail) : (journal_events_num - tail + head);
@@ -2606,8 +2605,7 @@ void delta_HMI_init_regs() {
 	delta_HMI_f = NULL;
 	delta_HMI_i = NULL;
 	delta_HMI_b = NULL;
-
-
+	
 	delta_HMI_f = (float*) malloc(math_real_out_num * 4);
 	delta_HMI_i = (int32_t*) malloc(math_int_out_num * 4);
 	delta_HMI_b = (uint8_t*) malloc(math_bool_out_num);
@@ -2639,12 +2637,14 @@ void delta_HMI_copy_indi(const net_msg_t* indi_msg) {
 }
 
 
+
 void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 
 	if (!delta_HMI_init_flag) {
 		*num = 0;
 		return;
 	}
+
 
 	DEBUG_ADD_POINT(359);
 
@@ -2681,10 +2681,10 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 			num_to_copy = (math_real_out_num - n);
 		else
 			num_to_copy = DELTA_MAX_REGS_TO_SEND / 2;
-
+		
 		for (unsigned i = n; i < n + num_to_copy; i++, ptr += 2)
 			*(float*)ptr = delta_HMI_f[i];
-
+		
 		*num = num_to_copy * 2;
 		*start_reg = DELTA_REAL_START_REG + n * 2;
 
@@ -2817,6 +2817,97 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 
 
 
+#if 0
+/**********************************************************************/
+int t1, t2, test_time;
+
+#define NUM_F  50
+#define NUM_I  30
+#define NUM_B  150
+
+volatile float test_f[NUM_F];
+volatile int32_t test_i[NUM_I];
+volatile uint8_t test_b[NUM_B];
+
+volatile float* test2_f[NUM_F];
+volatile int32_t* test2_i[NUM_I];
+volatile uint8_t* test2_b[NUM_B];
+
+float* test_f_end;
+int32_t* test_i_end;
+uint8_t* test_b_end;
+
+void speed_test() {
+
+	static bool start = false;
+	if (!start) {
+		start = true;
+
+		for (int i = 0; i < NUM_F; i++)
+			test2_f[i] = (float*)&MATH_IO_REAL_OUT[rand()%math_real_out_num];
+
+		for (int i = 0; i < NUM_I; i++)
+			test2_i[i] = (int32_t*)&MATH_IO_INT_OUT[rand()%math_int_out_num];
+
+		for (int i = 0; i < NUM_B; i++)
+			test2_b[i] = (uint8_t*)&MATH_IO_BOOL_OUT[rand()% math_bool_out_num];
+
+		
+		test_f_end = (float*)&test_f[NUM_F];
+		test_i_end = (int32_t*)&test_i[NUM_I];
+		test_b_end = (uint8_t*)&test_b[NUM_B];
+	}
+
+
+	t1 = get_cpu_clks();
+
+#if 0
+	memcpy((char*)test_f, MATH_IO_REAL_OUT, NUM_F * 4);
+	memcpy((char*)test_i, MATH_IO_INT_OUT, NUM_I * 4);
+	memcpy((char*)test_b, MATH_IO_BOOL_OUT, NUM_B);
+#else
+
+	register float* src_f = (float*)test2_f;
+	register float* dst_f = (float*)test_f;
+
+	for (; dst_f != test_f_end; src_f++, dst_f++)
+		*dst_f = *src_f;
+
+
+	register int32_t* src_i = (int32_t*)test2_i;
+	register int32_t* dst_i = (int32_t*)test_i;
+
+	for (; dst_i != test_i_end; src_i++, dst_i++)
+		*dst_i = *src_i;
+
+	register uint8_t* src_b = (uint8_t*)test2_b;
+	register uint8_t* dst_b = (uint8_t*)test_b;
+
+	for (; dst_b != test_b_end; src_b++, dst_b++)
+		*dst_b = *src_b;
+
+	/*
+	for (int i = 0; i < NUM_F; i++)
+		test_f[i] = *(test2_f[i]);
+
+	for (int i = 0; i < NUM_I; i++)
+		test_i[i] = *(test2_i[i]);
+
+	for (int i = 0; i < NUM_B; i++)
+		test_b[i] = *(test2_b[i]);
+		*/
+
+#endif
+	
+	t2 = get_cpu_clks();
+
+	test_time = t2 - t1;
+
+}
+
+/**********************************************************************/
+#endif
+
 
 
 //основная периодическая функция сурзы
@@ -2827,16 +2918,13 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	steady_clock_update((int)SurzaPeriod());
 
-
 	dic_read();
-
 
 	// ====== вызов МЯДа  ==================
 	DEBUG_ADD_POINT(22);
     MYD_step();
 	DEBUG_ADD_POINT(23);
 	// =====================================
-
 
 	#if 0
 	static unsigned cnt = 0;
@@ -2909,12 +2997,12 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	DEBUG_ADD_POINT(28);
 	journal_add();
 
-
 	DEBUG_ADD_POINT(29);
 	/***************/
 	//ВРЕМЕННО !!!  чтение измерителя шага , пока нет сделано это через конфигурацию
 	RTInW(0x440);
 	/***************/
+
 
 }
 

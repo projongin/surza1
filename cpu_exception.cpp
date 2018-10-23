@@ -10,9 +10,11 @@
 //#include <Windows.h>
 
 
+__pragma(optimize("", off))
+
 
 #define CPU_DEBUG_POINTS_MAX   4096   //количество уникальных точек в программе
-#define CPU_DEBUG_BUF_LENGTH   100    //длина записываемого буфера истории хождения по точкам
+#define CPU_DEBUG_BUF_LENGTH   80     //длина записываемого буфера истории хождения по точкам
 
 
 static volatile int buf_ptr = 0;
@@ -36,10 +38,13 @@ static RTKSpinlock debug_spinlock;
 
 void RTTAPI debug_handler(int ExitCode) {
 
+	RTKDisableInterrupts();
+	RTKLockSpinlock(debug_spinlock);  //блокируем навсегда
+
 	unsigned i = debug_buf_ptr;
 	do {
 
-		if(debug_buf[i])
+		if (debug_buf[i])
 			printf_s(" %u-%X:%X", debug_buf[i], debug_points[debug_buf[i]].cs, debug_points[debug_buf[i]].adr);
 
 		i++;
@@ -62,6 +67,7 @@ volatile unsigned __stdcall get_segment() {
 }
 
 static volatile unsigned esp_save;
+
 
 void __stdcall debug_add_point(unsigned point) {
 
@@ -110,3 +116,5 @@ void cpu_exception_init() {
 
 
 }
+
+__pragma(optimize("", on))

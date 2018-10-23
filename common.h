@@ -73,12 +73,14 @@ void global_spinlock_lock();
 void global_spinlock_unlock();
 //-------------------------------
 
+//получение счетчика тактов процессора (использовать только если одно ядро и нет динамического изменения частоты процессора, иначе надо делать по другому)
+int __stdcall get_cpu_clks();
 
 
 
 #ifdef CPU_EXCEPTION_14_DEBUG
 #include "cpu_exception.h"
-#define DEBUG_ADD_POINT(x) debug_add_point((x));
+#define DEBUG_ADD_POINT(x)  debug_add_point((x));
 #else
 #define DEBUG_ADD_POINT(x)
 #endif

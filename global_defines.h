@@ -15,4 +15,4 @@
 
 
 //включение отладки page fault
-#define  CPU_EXCEPTION_14_DEBUG
+#define  _CPU_EXCEPTION_14_DEBUG
