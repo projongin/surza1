@@ -24,3 +24,5 @@ unsigned SurzaPeriod();  //период сурзы в микросекундах
 void indi_send();   //заполнить и послать новые индикаторы
 
 void journal_update();
+
+void oscilloscope_update();

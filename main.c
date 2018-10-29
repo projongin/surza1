@@ -239,6 +239,10 @@ int  main(int argc, char * argv[])
 			DEBUG_ADD_POINT(14);
 			journal_update();
 
+
+			DEBUG_ADD_POINT(15);
+			oscilloscope_update();
+
 	
             #ifdef DELTA_HMI_ENABLE
 			DEBUG_ADD_POINT(16);

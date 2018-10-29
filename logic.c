@@ -80,7 +80,7 @@ static bool check_settings_msg(msg_type_settings_t* msg, unsigned size) {
 
 
 void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
-	DEBUG_ADD_POINT(309);
+	DEBUG_ADD_POINT(320);
 
 	LOG_AND_SCREEN("New settings message received");
 
@@ -117,7 +117,7 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 
 
 void settings_request_callback(net_msg_t* msg, uint64_t channel) {
-	DEBUG_ADD_POINT(310);
+	DEBUG_ADD_POINT(321);
 
 	if (msg->size < sizeof(msg_type_settings_request_t))
 		return;
@@ -224,7 +224,7 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 
 
 void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
-	DEBUG_ADD_POINT(311);
+	DEBUG_ADD_POINT(322);
 	LOG_AND_SCREEN("New firmware received");
 
 	msg_type_firmware_t* f_msg;
@@ -282,6 +282,7 @@ static bool init_dic();
 static bool init_fiu();
 static bool init_params();
 static bool init_journal();
+static bool init_oscilloscope();
 
 
 int logic_init() {
@@ -336,8 +337,16 @@ int logic_init() {
 				LOG_AND_SCREEN("JOURNAL init failed!");
 				break;
 			}
-			
+
 			DEBUG_ADD_POINT(307);
+
+			if (!init_oscilloscope()) {
+				LOG_AND_SCREEN("OSCILLOSCOPE init failed!");
+				break;
+			}
+
+			
+		    DEBUG_ADD_POINT(308);
 
 			//дельта опционально
             #ifdef DELTA_HMI_ENABLE
@@ -345,7 +354,10 @@ int logic_init() {
 			delta_hmi_open(delta_HMI_set_regs);
             #endif
 			
-			DEBUG_ADD_POINT(308);
+			DEBUG_ADD_POINT(309);
+
+
+			//DEBUG_ADD_POINT(310);
 
 			ok = true;
 			break;
@@ -362,7 +374,7 @@ int logic_init() {
 	//прием файла новой прошивки
 	net_add_dispatcher((uint8_t)NET_MSG_SURZA_FIRMWARE, new_firmware_callback);
 
-	DEBUG_ADD_POINT(312);
+	DEBUG_ADD_POINT(311);
 
 	return ok ? 0 : (-1);
 }
@@ -1985,7 +1997,7 @@ static bool init_journal() {
 				switch (type) {
 				case LOGIC_TYPE_REAL_OUT:  if (num < math_real_out_num) journal_event_num_real++; else err = true; break;
 				case LOGIC_TYPE_INT_OUT:   if (num < math_int_out_num) journal_event_num_int++; else err = true; break;
-				case  LOGIC_TYPE_BOOL_OUT: if (num < math_bool_out_num) journal_event_num_bool++; else err = true; break;
+				case LOGIC_TYPE_BOOL_OUT:  if (num < math_bool_out_num) journal_event_num_bool++; else err = true; break;
 				default: err = true; break;
 				}
 			}
@@ -2582,6 +2594,574 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 }
 
 
+
+
+//=======================================================================
+//     осциллограф
+//=======================================================================
+
+#define  OSC_MIN_LENGTH_MSEC   20
+#define  OSC_MAX_LENGTH_MSEC   10000
+
+#define  OSC_TRIGGER_PERCENT_MIN   1
+#define  OSC_TRIGGER_PERCENT_MAX   99
+
+
+static bool oscilloscope_init_ok;
+
+static unsigned osc_min_length_msec;   //миниальная длина осциллограммы в миллисекундах (из настроек)
+static unsigned osc_min_length;        //миниальное количество точек в осциллограмме, высчитываемое из из миниальной длины и времени такта сурзы
+
+static unsigned osc_trigger_percent;   //точка триггера в процентах (из настроек)
+static unsigned osc_trigger_point;     //высчитываемое кол-во точек предистории
+
+static unsigned trigger_num;           //триггер.  выходной номер BOOL
+
+static unsigned osc_data_num;          //общее кол-во данных
+
+	   //количество данных для копирования
+static unsigned osc_num_real;
+static unsigned osc_num_int;
+static unsigned osc_num_bool;  //всегда +1 буль к количеству из конфигурации для хранения триггера
+
+       //указатели на массивы указателей на данные в выходных таблицах мяда
+static float*   (*osc_real_myd_ptrs)[];
+static int32_t* (*osc_int_myd_ptrs)[];
+static uint8_t* (*osc_bool_myd_ptrs)[];
+
+//смещение в байтах до данных разного типа в записи одного отсчета осциллографа (для ускорения работы в прерывании)
+static unsigned osc_record_offset_real;
+static unsigned osc_record_offset_int;
+static unsigned osc_record_offset_bool;
+
+//размер записи одного отсчета осциллографа
+static unsigned osc_record_size;
+
+
+
+static bool init_oscilloscope() {
+
+	oscilloscope_init_ok = false;
+
+
+	param_tree_node_t* osc_node = ParamTree_Find(ParamTree_MainNode(), "OSCILLOSCOPE", PARAM_TREE_SEARCH_NODE);
+	if (!osc_node) {
+		LOG_AND_SCREEN("No OSCILLOSCOPE!");
+		return true;   // осциллограф событий не используются
+	}
+
+
+	//считывание общих параметров журнала
+	param_tree_node_t* item;
+
+
+	item = ParamTree_Find(osc_node, "length_msec", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)  return false;
+	if (sscanf_s(item->value, "%u", &osc_min_length_msec) <= 0) return false;
+	if (osc_min_length_msec<OSC_MIN_LENGTH_MSEC || osc_min_length_msec>OSC_MAX_LENGTH_MSEC) return false;
+
+	item = ParamTree_Find(osc_node, "trigger_point", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)  return false;
+	if (sscanf_s(item->value, "%u", &osc_trigger_percent) <= 0) return false;
+	if (osc_trigger_percent<OSC_TRIGGER_PERCENT_MIN || osc_trigger_percent>OSC_TRIGGER_PERCENT_MAX) return false;
+
+	item = ParamTree_Find(osc_node, "trigger_num", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)  return false;
+	if (sscanf_s(item->value, "%u", &trigger_num) <= 0) return false;
+	if (trigger_num>=math_bool_out_num) return false;
+
+
+	//определение количества данных
+
+	param_tree_node_t* data_node = ParamTree_Find(osc_node, "DATA", PARAM_TREE_SEARCH_NODE);
+	if (!data_node) {
+		LOG_AND_SCREEN("NO OSCILLOSCOPE DATA SECTION!");
+		return true;
+	}
+	else {
+		osc_data_num = ParamTree_ChildNum(data_node);
+		if (!osc_data_num) {
+			LOG_AND_SCREEN("NO OSCILLOSCOPE DATA!");
+			return true;
+		}
+	}
+
+
+
+	// поиск и инициализация данных осциллографа
+	osc_num_real = 0;
+	osc_num_int = 0;
+	osc_num_bool = 0;
+
+	
+	//получение количества данных
+	param_tree_node_t* node;
+	bool err = false;
+	unsigned type, num;
+
+	for (node = ParamTree_Child(data_node); node && !err; node = node->next) {
+
+		item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)	err = true;
+		else if (sscanf_s(item->value, "%u", &type) <= 0) err = true;
+
+
+		if (!err) {
+			item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+			if (!item || !item->value)	err = true;
+			else if (sscanf_s(item->value, "%u", &num) <= 0) err = true;
+		}
+
+
+		if (!err) {
+			switch (type) {
+			case LOGIC_TYPE_REAL_OUT:  if (num < math_real_out_num) osc_num_real++; else err = true; break;
+			case LOGIC_TYPE_INT_OUT:   if (num < math_int_out_num)  osc_num_int++; else err = true; break;
+			case LOGIC_TYPE_BOOL_OUT:  if (num < math_bool_out_num) osc_num_bool++; else err = true; break;
+			default: err = true; break;
+			}
+		}
+
+	}
+
+	if (err) {
+		LOG_AND_SCREEN("OSCILLOSCOPE data init error! (incorrect data settings)");
+		return false;
+	}
+
+	// один дополнительный bool для хранения значения триггера
+	osc_num_bool++;
+
+
+	//выделение памяти таблицы указателей на данные
+	osc_real_myd_ptrs = NULL;
+	osc_int_myd_ptrs = NULL;
+	osc_bool_myd_ptrs = NULL;
+
+	err = false;
+
+	if (osc_num_real) {
+		osc_real_myd_ptrs = (float* (*)[])malloc(sizeof(float*)*osc_num_real);
+		if (!osc_real_myd_ptrs)
+			err = true;
+	}
+
+	if (osc_num_int) {
+		osc_int_myd_ptrs = (int32_t* (*)[])malloc(sizeof(int32_t*)*osc_num_int);
+		if (!osc_int_myd_ptrs)
+			err = true;
+	}
+
+	if (osc_num_bool) {
+		osc_bool_myd_ptrs = (uint8_t* (*)[])malloc(sizeof(uint8_t*)*osc_num_bool);
+		if (!osc_bool_myd_ptrs)
+			err = true;
+	}
+
+	if (err) {
+		if (osc_real_myd_ptrs) free(osc_real_myd_ptrs);
+		if (osc_int_myd_ptrs)  free(osc_int_myd_ptrs);
+		if (osc_bool_myd_ptrs) free(osc_bool_myd_ptrs);
+		LOG_AND_SCREEN("OSCILLOSCOPE init error! (data pointers alloc error)");
+		return false;
+	}
+
+
+	//заполнение массивов указателей
+
+	err = false;
+	int index_f = 0, index_i = 0, index_b = 0;
+
+	for (node = ParamTree_Child(data_node); node && !err; node = node->next) {
+
+		item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)	err = true;
+		else if (sscanf_s(item->value, "%u", &type) <= 0) err = true;
+
+
+		if (!err) {
+			item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+			if (!item || !item->value)	err = true;
+			else if (sscanf_s(item->value, "%u", &num) <= 0) err = true;
+		}
+
+
+		if (!err) {
+			switch (type) {
+			case LOGIC_TYPE_REAL_OUT:  (*osc_real_myd_ptrs)[index_f++] = &math_real_out[num]; break;
+			case LOGIC_TYPE_INT_OUT:   (*osc_int_myd_ptrs)[index_i++] = &math_int_out[num]; break;
+			case LOGIC_TYPE_BOOL_OUT:  (*osc_bool_myd_ptrs)[index_b++] = &math_bool_out[num]; break;
+			default: err = true; break;
+			}
+		}
+
+	}
+
+	if (err) {
+		if (osc_real_myd_ptrs) free(osc_real_myd_ptrs);
+		if (osc_int_myd_ptrs)  free(osc_int_myd_ptrs);
+		if (osc_bool_myd_ptrs) free(osc_bool_myd_ptrs);
+		LOG_AND_SCREEN("OSCILLOSCOPE data init internal error!");
+		return false;
+	}
+
+	//добавление дополнительного bool для триггера
+	(*osc_bool_myd_ptrs)[index_b++] = &math_bool_out[trigger_num];
+
+
+
+	//подсчет смещений для последующего быстрого доступа в прерывании
+	osc_record_offset_real = 0;
+	osc_record_offset_int = journal_event_offset_real + osc_num_real * 4;
+	osc_record_offset_bool = journal_event_offset_int + osc_num_int * 4;
+
+	osc_record_size = journal_event_offset_bool + osc_num_bool;
+
+	//размер делаем кратным 4
+	while (osc_record_size % 4)
+		osc_record_size++;
+
+
+
+
+	//ДАЛЕЕ СОЗДАНИЕ БУФЕРОВ, ОПРЕДЕЛЕНИЕ ТОЧЕК СРАБАТЫВАНИЯ В ТАКТАХ СУРЗЫ, ДЛИНЫ И Т.П.
+
+
+
+
+
+
+
+#if 0
+	param_tree_node_t* journal_node;
+	param_tree_node_t* events_node;
+	param_tree_node_t* data_node;
+	param_tree_node_t* node;
+	param_tree_node_t* item;
+
+
+	journal_node = ParamTree_Find(ParamTree_MainNode(), "JOURNAL", PARAM_TREE_SEARCH_NODE);
+	if (!journal_node) {
+		LOG_AND_SCREEN("No JOURNAL!");
+		return true;   // Журнал событий не используются
+	}
+
+
+	events_node = ParamTree_Find(journal_node, "EVENTS", PARAM_TREE_SEARCH_NODE);
+	if (!events_node) {
+		LOG_AND_SCREEN("No JOURNAL EVENTS!");
+		return true;   // Нет событий в журнале событий
+	}
+	else {
+		events_num = ParamTree_ChildNum(events_node);
+		if (!events_num) {
+			LOG_AND_SCREEN("No JOURNAL EVENTS!!");
+			return true;   // нет событий
+		}
+	}
+
+
+	//поиск и заполнение всех событий
+
+	//выделение памяти для данных каждого события и их результатов
+	event_data = (journal_event_data_t*)calloc(events_num, sizeof(journal_event_data_t));
+	if (!event_data) {
+		LOG_AND_SCREEN("JOURNAL init error! (alloc event_data)");
+		return false;
+	}
+	event_data_end = event_data + events_num;
+
+	events_result = (uint8_t*)malloc(events_num);
+	if (!events_result) {
+		free(event_data);
+		LOG_AND_SCREEN("JOURNAL init error! (alloc events_result)");
+		return false;
+	}
+
+
+	//заполнение данных событий из дерева настроек
+
+	bool err = false;
+	unsigned n = 0;
+
+	for (node = ParamTree_Child(events_node); node && !err; node = node->next, n++) {
+
+		item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &(event_data[n].increment)) <= 0 || event_data[n].increment >= math_bool_out_num)  //использую поле increment как временную переменную
+				err = true;
+
+		//указатель на флаг события в выходной структуре мяда
+		event_data[n].value_ptr = math_bool_out + event_data[n].increment;
+
+
+		item = ParamTree_Find(node, "edge", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &(event_data[n].edge)) <= 0 || event_data[n].edge>2)
+				err = true;
+
+		item = ParamTree_Find(node, "increment", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &(event_data[n].increment)) <= 0)
+				err = true;
+
+		item = ParamTree_Find(node, "decrement", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &(event_data[n].decrement)) <= 0)
+				err = true;
+
+		item = ParamTree_Find(node, "block_level", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &(event_data[n].block_level)) <= 0)
+				err = true;
+
+		item = ParamTree_Find(node, "block_time", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &(event_data[n].block_time)) <= 0)
+				err = true;
+
+		item = ParamTree_Find(node, "block_add", PARAM_TREE_SEARCH_ITEM);
+		if (!item || !item->value)
+			err = true;
+		else
+			if (sscanf_s(item->value, "%u", &(event_data[n].block_warning_time)) <= 0)
+				err = true;
+
+	}
+
+	if (err) {
+		LOG_AND_SCREEN("JOURNAL init error! (incorrect event)");
+		free(event_data);
+		free(events_result);
+		return false;
+	}
+
+
+	// инициализация данных событий
+	journal_event_num_real = 0;
+	journal_event_num_int = 0;
+	journal_event_num_bool = 0;
+
+	data_node = ParamTree_Find(journal_node, "DATA", PARAM_TREE_SEARCH_NODE);
+	if (!data_node) {
+		LOG_AND_SCREEN("No JOURNAL DATA!");   // Нет данных к событиям
+	}
+	else {
+		//получение количества данных
+
+		err = false;
+		unsigned type, num;
+
+		for (node = ParamTree_Child(data_node); node && !err; node = node->next) {
+
+			item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+			if (!item || !item->value)
+				err = true;
+			else
+				if (sscanf_s(item->value, "%u", &type) <= 0)
+					err = true;
+
+
+			if (!err) {
+				item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+				if (!item || !item->value)
+					err = true;
+				else
+					if (sscanf_s(item->value, "%u", &num) <= 0)
+						err = true;
+			}
+
+
+			if (!err) {
+				switch (type) {
+				case LOGIC_TYPE_REAL_OUT:  if (num < math_real_out_num) journal_event_num_real++; else err = true; break;
+				case LOGIC_TYPE_INT_OUT:   if (num < math_int_out_num) journal_event_num_int++; else err = true; break;
+				case LOGIC_TYPE_BOOL_OUT:  if (num < math_bool_out_num) journal_event_num_bool++; else err = true; break;
+				default: err = true; break;
+				}
+			}
+
+		}
+
+		if (err) {
+			LOG_AND_SCREEN("JOURNAL data init error! (incorrect data settings)");
+			free(event_data);
+			free(events_result);
+			return false;
+		}
+
+	}
+
+
+	//выделение памяти под указатели на данные
+	journal_event_real_myd_ptrs = NULL;
+	journal_event_int_myd_ptrs = NULL;
+	journal_event_bool_myd_ptrs = NULL;
+
+	err = false;
+
+	if (journal_event_num_real) {
+		journal_event_real_myd_ptrs = (float* (*)[])malloc(sizeof(float*)*journal_event_num_real);
+		if (!journal_event_real_myd_ptrs)
+			err = true;
+	}
+
+	if (journal_event_num_int) {
+		journal_event_int_myd_ptrs = (int32_t* (*)[])malloc(sizeof(int32_t*)*journal_event_num_int);
+		if (!journal_event_int_myd_ptrs)
+			err = true;
+	}
+
+	if (journal_event_num_bool) {
+		journal_event_bool_myd_ptrs = (uint8_t* (*)[])malloc(sizeof(uint8_t*)*journal_event_num_bool);
+		if (!journal_event_bool_myd_ptrs)
+			err = true;
+	}
+
+	if (err) {
+		journal_free_all_memory();
+		LOG_AND_SCREEN("JOURNAL init error! (data pointers alloc error)");
+		return false;
+	}
+
+	//заполнение массивов указателей
+
+	if (journal_event_num_real || journal_event_num_int || journal_event_num_bool) {
+
+		err = false;
+		unsigned type, num;
+		int index_f = 0, index_i = 0, index_b = 0;
+
+		for (node = ParamTree_Child(data_node); node && !err; node = node->next) {
+
+			item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+			if (!item || !item->value)
+				err = true;
+			else
+				if (sscanf_s(item->value, "%u", &type) <= 0)
+					err = true;
+
+
+			if (!err) {
+				item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+				if (!item || !item->value)
+					err = true;
+				else
+					if (sscanf_s(item->value, "%u", &num) <= 0)
+						err = true;
+			}
+
+
+			if (!err) {
+				switch (type) {
+				case LOGIC_TYPE_REAL_OUT:  (*journal_event_real_myd_ptrs)[index_f++] = &math_real_out[num]; break;
+				case LOGIC_TYPE_INT_OUT:   (*journal_event_int_myd_ptrs)[index_i++] = &math_int_out[num]; break;
+				case  LOGIC_TYPE_BOOL_OUT: (*journal_event_bool_myd_ptrs)[index_b++] = &math_bool_out[num]; break;
+				default: err = true; break;
+				}
+			}
+
+		}
+
+		if (err) {
+			LOG_AND_SCREEN("JOURNAL data init internal error!");
+			journal_free_all_memory();
+			return false;
+		}
+
+
+	}
+
+
+	//подсчет смещений для последующего быстрого доступа
+
+	journal_event_offset_result = sizeof(journal_event_t);
+	journal_event_offset_real = journal_event_offset_result + events_num;
+	journal_event_offset_int = journal_event_offset_real + journal_event_num_real * 4;
+	journal_event_offset_bool = journal_event_offset_int + journal_event_num_int * 4;
+
+	journal_event_size = journal_event_offset_bool + journal_event_num_bool;
+
+	//размер делаем кратным 4
+	while (journal_event_size % 4)
+		journal_event_size++;
+	//-----------------------------------------------------------------------
+
+
+	//выделение памяти под кольцевое хранилище событий
+	journal_events = (uint8_t*)calloc(EVENTS_BUF_SIZE, journal_event_size);
+	if (!journal_events) {
+		journal_free_all_memory();
+		LOG_AND_SCREEN("JOURNAL init error! (alloc journal_events)");
+		return false;
+	}
+	journal_events_num = EVENTS_BUF_SIZE;
+	journal_events_head = 0;
+	journal_events_tail = 0;
+
+	LOG_AND_SCREEN("JOURNAL memory: %.1f MBytes", (EVENTS_BUF_SIZE*journal_event_size) / (float)(1024 * 1024));
+
+
+	//определение длины сообщения
+	journal_msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
+
+	//получение уникального номера событий
+	journal_event_unique_id = launchnum_get();
+	journal_event_unique_id <<= 32;
+
+
+	//прием запросов на удаление и отправку событий
+	net_add_dispatcher((uint8_t)NET_MSG_JOURNAL_REQUEST, journal_request_callback);
+
+
+	journal_init_ok = true;
+
+
+	return true;
+
+#endif
+
+
+
+	return false;
+}
+
+
+
+
+void oscilloscope_add() {
+
+	if (!oscilloscope_init_ok)
+		return;
+
+
+}
+
+
+void oscilloscope_update() {
+
+	if (!oscilloscope_init_ok)
+		return;
+
+
+
+}
+
+
+
+
 //------------------------------------------------------------------------
 #ifdef DELTA_HMI_ENABLE
 
@@ -2998,6 +3578,10 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	journal_add();
 
 	DEBUG_ADD_POINT(29);
+	oscilloscope_add();
+
+	DEBUG_ADD_POINT(35);
+
 	/***************/
 	//ВРЕМЕННО !!!  чтение измерителя шага , пока нет сделано это через конфигурацию
 	RTInW(0x440);
