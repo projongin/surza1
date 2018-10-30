@@ -110,6 +110,23 @@ void* buf_pool_get(int pool_num) {
 }
 
 
+void* buf_pool_get_fast(int pool_num) {
+
+	buf_pool_t* pool = &buf_pools[pool_num];
+	void* p = NULL;
+
+	if (pool->stack_ptr < pool->size) {
+		p = (*pool->stack)[pool->stack_ptr++];
+	}
+
+#ifdef BUF_POOL_DEBUG_PRINT
+	printf("buf_pool_get_fast(%d) %s, adr=0x%0X\n", pool_num, p ? "ok" : "failed", (int)p);
+#endif
+
+	return p;
+}
+
+
 
 //отдать буфер
 bool buf_pool_free(int pool_num, void* ptr) {
@@ -126,6 +143,23 @@ bool buf_pool_free(int pool_num, void* ptr) {
 	  }
 	RTKSignal(pool->mutex);
 
+
+#ifdef BUF_POOL_DEBUG_PRINT
+	printf("buf_pool_free(%d), adr=0x%0X\n", pool_num, (unsigned)ptr);
+#endif
+
+	return ok;
+}
+
+bool buf_pool_free_fast(int pool_num, void* ptr) {
+
+	buf_pool_t* pool = &buf_pools[pool_num];
+
+	bool ok = false;
+	if (pool->stack_ptr > 0) {
+		(*pool->stack)[--pool->stack_ptr] = ptr;
+		ok = true;
+	}
 
 #ifdef BUF_POOL_DEBUG_PRINT
 	printf("buf_pool_free(%d), adr=0x%0X\n", pool_num, (unsigned)ptr);
@@ -157,6 +191,10 @@ int buf_pool_bufs_available(int pool_num) {
 	return s;
 }
 
+
+int buf_pool_bufs_available_fast(int pool_num) {
+	return buf_pools[pool_num].size - buf_pools[pool_num].stack_ptr;
+}
 
 
 //==============================================================================================
