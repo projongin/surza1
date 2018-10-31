@@ -2623,7 +2623,7 @@ static unsigned osc_min_length;        //миниальное количество точек в осциллогр
 static unsigned osc_trigger_percent;   //точка триггера в процентах (из настроек)
 static unsigned osc_trigger_point;     //высчитываемое кол-во точек предыстории
 
-static unsigned trigger_num;           //триггер.  выходной номер BOOL
+static unsigned osc_trigger_num;       //триггер.  выходной номер BOOL
 
 static unsigned osc_data_num;          //общее кол-во данных
 
@@ -2649,7 +2649,7 @@ static unsigned osc_record_size;
 static unsigned osc_bufs_total;
 
 // номер пула буферов
-static int osc_buf_pul_num;
+static int osc_buf_pool_num;
 
 
 #pragma pack(push)
@@ -2659,6 +2659,7 @@ typedef struct {
 	void*        last;     //указатель на последний буфер
 	unsigned     num;      //количество буферов в цепочке
 	unsigned     n_to_complete; //количество буферов необходимое для завершения осциллограммы
+	unsigned     first_trigger; //номер отсчета первого сработавшего триггера
 	surza_time_t time;     //время срабатывания первого триггера
 	uint64_t     id;       //уникальный порядковый номер осциллограммы
 } osc_internal_header_t;
@@ -2667,6 +2668,8 @@ typedef struct {
 static osc_internal_header_t  osc_internal_headers[OSC_INTERNAL_HEADERS_MAX];
 static unsigned osc_internal_headers_head;
 static unsigned osc_internal_headers_tail;
+
+static uint64_t osc_id;   //счетчик уникальных номеров осциллограмм
 
 
 
@@ -2708,8 +2711,8 @@ static bool init_oscilloscope() {
 
 	item = ParamTree_Find(osc_node, "trigger_num", PARAM_TREE_SEARCH_ITEM);
 	if (!item || !item->value)  return false;
-	if (sscanf_s(item->value, "%u", &trigger_num) <= 0) return false;
-	if (trigger_num>=math_bool_out_num) return false;
+	if (sscanf_s(item->value, "%u", &osc_trigger_num) <= 0) return false;
+	if (osc_trigger_num >= math_bool_out_num) return false;
 
 
 	//определение количества данных
@@ -2843,7 +2846,7 @@ static bool init_oscilloscope() {
 	}
 
 	//добавление дополнительного bool для триггера
-	(*osc_bool_myd_ptrs)[index_b++] = &math_bool_out[trigger_num];
+	(*osc_bool_myd_ptrs)[index_b++] = &math_bool_out[osc_trigger_num];
 
 
 
@@ -2874,8 +2877,8 @@ static bool init_oscilloscope() {
 	if (osc_bufs_total > osc_min_length * OSC_MAX_LENGTH_FACTOR)
 		osc_bufs_total = osc_min_length * OSC_MAX_LENGTH_FACTOR;
 		
-	osc_buf_pul_num = buf_pool_add_pool(osc_record_size, osc_bufs_total);
-	if (osc_buf_pul_num<0) {
+	osc_buf_pool_num = buf_pool_add_pool(osc_record_size, osc_bufs_total);
+	if (osc_buf_pool_num<0) {
 		osc_free_memory();
 		LOG_AND_SCREEN("OSCILLOSCOPE memory allocation error!");
 		return false;
@@ -2890,6 +2893,9 @@ static bool init_oscilloscope() {
 	osc_internal_headers_tail = 0;
 	
 	
+	 //уникальный номер
+	 osc_id = launchnum_get();
+	 osc_id <<= 32;
 
 	//прием запросов по сети на отправку и удаление осциллограмм 
 	//net_add_dispatcher((uint8_t)NET_MSG_JOURNAL_REQUEST, journal_request_callback);
@@ -2901,15 +2907,75 @@ static bool init_oscilloscope() {
 }
 
 
+//копирование очередных данных после такта сурзы
+void osc_copy_data(void* buf) {
 
-#define OSC_ADD_STATE_INITIAL      0
-#define OSC_ADD_STATE_PREHISTORY   1
+	//копирование данных real
+	if (osc_num_real) {
+		float* dst_ptr = (float*)((uint8_t*)buf + osc_record_offset_real);
+		float* dst_ptr_end = dst_ptr + osc_num_real;
+		float** src_ptr = &(*osc_real_myd_ptrs)[0];
+		while (dst_ptr != dst_ptr_end) {
+			*dst_ptr = **src_ptr;
+			dst_ptr++;
+			src_ptr++;
+		}
+	}
+
+	//копирование данных int
+	if (osc_num_int) {
+		int32_t* dst_ptr = (int32_t*)((uint8_t*)buf + osc_record_offset_int);
+		int32_t* dst_ptr_end = dst_ptr + osc_num_int;
+		int32_t** src_ptr = &(*osc_int_myd_ptrs)[0];
+		while (dst_ptr != dst_ptr_end) {
+			*dst_ptr = **src_ptr;
+			dst_ptr++;
+			src_ptr++;
+		}
+	}
+
+	//копирование данных bool
+	if (osc_num_bool) {
+		uint8_t* dst_ptr = (uint8_t*)((uint8_t*)buf + osc_record_offset_bool);
+		uint8_t* dst_ptr_end = dst_ptr + osc_num_bool;
+		uint8_t** src_ptr = &(*osc_bool_myd_ptrs)[0];
+		unsigned i = 0;
+		while (dst_ptr != dst_ptr_end) {
+			*dst_ptr = **src_ptr;
+			dst_ptr++;
+			src_ptr++;
+		}
+	}
+
+}
+
+
+
+#define OSC_ADD_STATE_INITIAL         0
+#define OSC_ADD_STATE_PREHISTORY      1
+#define OSC_ADD_STATE_WAIT_TRIGGER    2
+#define OSC_ADD_STATE_HISTORY         3
 
 
 void oscilloscope_add() {
 
 	if (!oscilloscope_init_ok)
 		return;
+
+	//сохраненяемый указатель на последние данные в осциллограмме
+	static void* main_points_last_buf = NULL;
+
+
+	// обнаружение срабатывания триггера
+	static bool trigger_prev = false;
+	bool trigger = false;
+	bool new_trigger = math_bool_out[osc_trigger_num];
+	if (new_trigger != trigger_prev
+		&& new_trigger)
+		trigger = true;
+	trigger_prev = new_trigger;
+	//-----------------------------------------
+
 
 	static int state = OSC_ADD_STATE_INITIAL;
 	bool exit ;
@@ -2919,40 +2985,213 @@ void oscilloscope_add() {
 
 		switch (state) {
 		case OSC_ADD_STATE_INITIAL:
-			if (osc_internal_headers_head != osc_internal_headers_tail) { //есть уже готовые осциллограммы, надо взять новую структуру
+		{
+			//проверка доступности буферов как минимум в количестве, достаточном для минимальной длины осциллограммы
+			if (buf_pool_bufs_available_fast(osc_buf_pool_num) < (int)osc_min_length)
+				break;
+
+			if (osc_internal_headers_head != osc_internal_headers_tail) {  //есть уже готовые осциллограммы, надо взять новую структуру
 				//попытка взять новую свободную структуру
 				unsigned tmp = osc_internal_headers_head + 1;
 				if (tmp == OSC_INTERNAL_HEADERS_MAX)
 					tmp = 0;
-				if (tmp != osc_internal_headers_tail) {
-					//если не уткнулись в хвост (структуры забиты готовыми осциллограммами)
-					osc_internal_headers_head = tmp;
-					state = OSC_ADD_STATE_PREHISTORY;
-					exit = false;
-				}
-			} else {
-				//осциллограмм нет, головной буфер становится текущим, переход к следующему состоянию
-				state = OSC_ADD_STATE_PREHISTORY;
-				exit = false;
+				if (tmp != osc_internal_headers_tail) //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
+					break;
+				osc_internal_headers_head = tmp;
 			}
 
-			if (state != OSC_ADD_STATE_INITIAL) {
-				//структура для  осциллограммы была найдена, заполняю ее начальным состоянием
+			//структура для  осциллограммы найдена, заполняю ее начальным состоянием
 
-				//!!!!!!!!!!!!!!!!!!!!!!    продолжить  делать тут
+			osc_internal_header_t* header = &osc_internal_headers[osc_internal_headers_head];
+			header->first = NULL;
+			header->last = NULL;
+			header->num = 0;
+			//записывается целая осциллограмма + дополнительные точки равные длине предыстории (для следующей осциллограммы)
+			//если не было повторных срабатываний триггера, то при сохранении дополнительные данные убираются из текущей осциллограммы и становятся предысторией новой
+			header->n_to_complete = osc_min_length + osc_trigger_point;
+			header->first_trigger = UINT32_MAX;
 
 
-			}
+			//головной буфер становится текущим, переход к следующему состоянию
+			state = OSC_ADD_STATE_PREHISTORY;
+			exit = false;
+		}
 			break;
 
-		case OSC_ADD_STATE_PREHISTORY:
 
+		case OSC_ADD_STATE_PREHISTORY:
+		{
+			//получение нового буфера
+			void* new_buf = buf_pool_get_fast(osc_buf_pool_num);  //без проверки. буферы точно должны быть (условия прихода в OSC_ADD_STATE_PREHISTORY)
+
+			//заполнение новыми данными
+			osc_copy_data(new_buf);
+
+			//указатель на слудующий буфер равен NULL (буфер последний в цепочке)
+			*(void**)new_buf = NULL;
+
+			//добавление буфера в цепочку
+			osc_internal_header_t* header = &osc_internal_headers[osc_internal_headers_head];
+
+			if (!header->first)
+				header->first = new_buf;
+			else
+				*(void**)header->last = new_buf;  //last без проверки на NULL так как он обязан меняться только вместе с first
+
+			header->last = new_buf;
+			header->num++;
+			header->n_to_complete--;
+
+			
+			//если преждевременно сработал триггер (до накопления всей предыстории)
+			if (trigger) {
+				header->first_trigger = header->num - 1;
+				header->time = get_time();
+
+				state = OSC_ADD_STATE_HISTORY;
+			}
+			else
+				if (header->num == osc_trigger_point) {  //если накоплена все предыстория, то переход в состояние ожидания триггера
+					state = OSC_ADD_STATE_WAIT_TRIGGER;
+
+					//обнуление информации о сохраненных дополнительных данных в конце осциллограммы
+					main_points_last_buf = NULL;
+				}
+
+
+		}
+			break;
+
+
+		case OSC_ADD_STATE_WAIT_TRIGGER:
+		{
+			osc_internal_header_t* header = &osc_internal_headers[osc_internal_headers_head];
+
+			//изъятие из цепочки самого древнего буфера
+			void* new_buf = header->first;
+			header->first = *(void**)new_buf; //без проверок на NULL, так как в состоянии OSC_ADD_STATE_WAIT_TRIGGER буферы точно должны быть
+			*(void**)new_buf = NULL;          //помечаем последним
+			if (header->first == NULL)
+				header->last = NULL;
+
+
+			//заполнение новыми данными
+			osc_copy_data(new_buf);
+
+			//добавление буфера в цепочку
+			if (!header->first)
+				header->first = new_buf;
+			else
+				*(void**)header->last = new_buf;  //last без проверки на NULL так как он обязан меняться только вместе с first
+
+			header->last = new_buf;
+
+			//если сработал триггер
+			if (trigger) {
+				header->first_trigger = header->num - 1;
+				header->time = get_time();
+				state = OSC_ADD_STATE_HISTORY;
+			}
+			
+
+		}
+			break;
+
+
+		case OSC_ADD_STATE_HISTORY:
+		{
+			osc_internal_header_t* header = &osc_internal_headers[osc_internal_headers_head];
+
+			//получение нового буфера
+			void* new_buf = buf_pool_get_fast(osc_buf_pool_num);
+			if (!new_buf) {
+				//буферы закончились. сохранение осциллограммы как есть и уход в изначальное состояние
+				header->id = osc_id++;
+				state = OSC_ADD_STATE_INITIAL;
+				break;
+			}
+
+			//заполнение новыми данными
+			osc_copy_data(new_buf);
+
+			//указатель на слудующий буфер равен NULL (буфер последний в цепочке)
+			*(void**)new_buf = NULL;
+
+			//добавление буфера в цепочку
+			if (!header->first)
+				header->first = new_buf;
+			else
+				*(void**)header->last = new_buf;  //last без проверки на NULL так как он обязан меняться только вместе с first
+
+			header->last = new_buf;
+
+			header->num++;
+			header->n_to_complete--;
+
+			//сохранение указателя на последнюю точку перед записью дополнительных точек
+			if(header->n_to_complete == osc_trigger_point)
+				main_points_last_buf = new_buf;
+
+
+			//проверка на вновь сработавший триггер и необходимость продлить осциллограмму
+			if (trigger)
+				header->n_to_complete = osc_min_length; // длина осциллограммы после триггера + величина дополнительной предыстории (по итогу это равно просто минимальной длине осциллограммы )
+
+			//проверка на конец записи осциллограммы
+			if (header->n_to_complete == 0) {  //сохранение осциллограммы
+				
+				header->id = osc_id++;
+				
+				//получение новой структуры под следующую осциллограмму и перенос предыстории в нее
+				//при отсутствии структуры для новой осциллограммы дополнительные данные остаются в текущей с переходом в изначальное состояние (чтобы избежать долгое высвобождение буферов в прерывании)
+
+				//попытка взять новую свободную структуру
+				unsigned tmp = osc_internal_headers_head + 1;
+				if (tmp == OSC_INTERNAL_HEADERS_MAX)
+					tmp = 0;
+				if (tmp != osc_internal_headers_tail) { //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
+
+					//переход в начальное состояние
+					//пока в начальном состоянии не будет получена новая структура - процесс осциллографирования приостанавливается (скопилось слишком нмого неотправленных осциллограмм)
+					state = OSC_ADD_STATE_INITIAL;
+
+				}
+				else {
+					//перенос предыстории в новую осциллограмму
+
+					osc_internal_header_t* new_header = &osc_internal_headers[tmp];
+
+					//перенос в новую
+					new_header->first = *(void**)main_points_last_buf;
+					new_header->last = header->last;
+					new_header->num = osc_trigger_point;
+					new_header->n_to_complete = osc_min_length;  //требуется писать минимальную длину + дополнительную предысторию. но так как она уже есть, то только минимальную длину
+					new_header->first_trigger = UINT32_MAX;
+
+					//обрубаем дополнительные данные в текущей
+					header->last = main_points_last_buf;
+					*(void**)header->last = NULL;
+					header->num -= osc_trigger_point;
+
+					//окончательно переключаемся на новую структуру
+					osc_internal_headers_head = tmp;
+					main_points_last_buf = NULL;
+
+					//у новой осциллограммы уже есть вся предыстория, надо ждать срабатывания тригера, переход  в соответствующее состояние
+					state = OSC_ADD_STATE_WAIT_TRIGGER;
+				}
+
+			}
+
+		}
 			break;
 
 		}
+
 	} while (!exit);
 
 }
+
 
 
 void oscilloscope_update() {
