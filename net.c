@@ -1045,7 +1045,6 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 
 	 for (int i = 0; i < NET_MAX_CONNECTIONS_ALLOWED; i++)
 		 if (net_thread_state[i].sock != INVALID_SOCKET) {
-			 net_buf->channel = net_thread_state[i].channel;
 
 			 if(send_stack_ptr==0)
 				 send_stack[send_stack_ptr] = net_buf;   //первым уходим текущее сообщение
@@ -1056,8 +1055,10 @@ net_err_t net_send_msg(net_msg_t* msg, net_msg_priority_t priority, uint64_t cha
 				 ret = NET_ERR_MEM_ALLOC;
 				 break;
 			 }
-			 else
+			 else {
+				 send_stack[send_stack_ptr]->channel = net_thread_state[i].channel;
 				 send_stack_ptr++;
+			 }
 		 }
 
 	 DEBUG_ADD_POINT(159);

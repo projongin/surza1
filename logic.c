@@ -3199,6 +3199,7 @@ void oscilloscope_update() {
 	if (!oscilloscope_init_ok)
 		return;
 
+	//есть готовые осциллограммы когда osc_internal_headers_head и osc_internal_headers_tail отличаются
 
 
 }
