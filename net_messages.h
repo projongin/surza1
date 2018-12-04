@@ -28,6 +28,7 @@ enum GateMessageType{
 typedef struct {
 	int64_t  secs;   //seconds (unix time)
 	uint32_t nsecs;  //nanoseconds
+	uint64_t steady_nsecs; //steady clock nsecs
 } surza_time_t;
 
 
