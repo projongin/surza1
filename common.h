@@ -57,7 +57,7 @@ extern inline void wdt_update();
 void reboot();
 
 
-
+#include "net_messages.h"
 
 //--------- steady clock -------------
 int steady_clock_get();
@@ -66,6 +66,12 @@ bool steady_clock_expired_now(int32_t start_time, uint32_t timeout);
 bool steady_clock_expired(int32_t start_time, int32_t stop_time, uint32_t timeout);
 //------------------------------------
 
+//------- time ---------------------
+//добавить ко времени time  nsecs наносекунд
+surza_time_t SurzaTime_add(surza_time_t time, uint64_t nsecs);
+//отнять от времени time  nsecs наносекунд
+surza_time_t SurzaTime_sub(surza_time_t time, uint64_t nsecs);
+//----------------------------------
 
 
 //-------------------------------

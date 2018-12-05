@@ -19,6 +19,7 @@ enum GateMessageType{
 	NET_MSG_JOURNAL_EVENT,
 	NET_MSG_JOURNAL_INFO,
 	NET_MSG_JOURNAL_REQUEST,
+	NET_MSG_OSCILLOSCOPE,
 
 	NET_MSG_VYBORG_INFO = 40
 };
@@ -133,10 +134,68 @@ typedef struct {
 
 
 
+//-------------------------------------------------------------------
+//   oscilloscope
+//-------------------------------------------------------------------
+#define OSCILLOSCOPE_MSG_NEW             0
+#define OSCILLOSCOPE_MSG_DATA            1
+#define OSCILLOSCOPE_MSG_REQUEST_NEW     2
+#define OSCILLOSCOPE_MSG_REQUEST_DATA    3
+#define OSCILLOSCOPE_MSG_REQUEST_DELETE  4
+
+struct oscilloscope_header_t {
+	uint64_t id;                 //unique id
+	uint32_t parts;              //num of parts
+	uint32_t step_time_nsecs;    //step time in nsecs
+	uint32_t total_length;       //num of steps
+	uint32_t num_real;           //num of float
+	uint32_t num_int;            //num of int32_t
+	uint32_t num_bool;           //num of bool (uint8_t)
+	uint32_t total_length_bytes; //total osc data size in bytes
+	surza_time_t time;           //first step time
+	uint8_t  reserved[16];
+};
+
+typedef struct {
+	uint32_t type;
+	uint32_t size;
+	uint8_t  md5_hash[16];
+	//uint8_t msg[size];
+} msg_type_oscilloscope_t;
+
+// osc msg types:
+
+typedef struct oscilloscope_header_t oscilloscope_new_t;
+
+typedef struct {
+	uint64_t id;
+	uint32_t part;
+	uint32_t part_length_bytes;
+	uint8_t  reserved[8];
+	//uintt8_t data[part_length_bytes];
+}  oscilloscope_data_t;
+
+typedef struct {
+	uint64_t id;
+	uint32_t part;
+	uint8_t  reserved[8];
+} oscilloscope_request_data_t;
+
+typedef struct {
+	uint64_t id;
+	uint8_t  reserved[8];
+} oscilloscope_request_delete_t;
+
+//-------------------------------------------------------------------
+
+
+
+
+
 
 typedef struct msg_type_byborg_info_tt {
 	uint32_t  header[10];
-	uint16_t  regs[100];
+	//uint16_t  regs[100];
 } msg_type_byborg_info_t;
 
 

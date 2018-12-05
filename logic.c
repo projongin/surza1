@@ -41,6 +41,11 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num);
 #define PARAMS_FILENAME    "params.dat"
 
 
+
+//колбек для осциллографа
+void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel);
+
+
 #pragma pack(push)
 #pragma pack(1) 
 typedef struct {
@@ -375,6 +380,11 @@ int logic_init() {
 
 	//прием файла новой прошивки
 	net_add_dispatcher((uint8_t)NET_MSG_SURZA_FIRMWARE, new_firmware_callback);
+
+	//прием сообщений для осциллографа
+	net_add_dispatcher((uint8_t)NET_MSG_OSCILLOSCOPE, oscilloscope_net_callback);
+
+	
 
 	DEBUG_ADD_POINT(311);
 
@@ -2614,6 +2624,8 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 #define  OSC_TRIGGER_PERCENT_MIN   1
 #define  OSC_TRIGGER_PERCENT_MAX   99
 
+#define  OSC_NET_MSG_SIZE_MAX      (1024*1024)   //максимальный размер данных осциллограммы для передачи в одном сообщении (разбиение осциллограммы на части размером OSC_NET_MSG_SIZE_MAX)
+
 
 static bool oscilloscope_init_ok;
 
@@ -3177,7 +3189,7 @@ void oscilloscope_add() {
 					osc_internal_headers_head = tmp;
 					main_points_last_buf = NULL;
 
-					//у новой осциллограммы уже есть вся предыстория, надо ждать срабатывания тригера, переход  в соответствующее состояние
+					//у новой осциллограммы уже есть вся предыстория, надо ждать срабатывания триггера, переход  в соответствующее состояние
 					state = OSC_ADD_STATE_WAIT_TRIGGER;
 				}
 
@@ -3194,16 +3206,104 @@ void oscilloscope_add() {
 
 
 
+
+
 void oscilloscope_update() {
+
+	static struct oscilloscope_header_t header;
+	static bool header_en = false;
+
 
 	if (!oscilloscope_init_ok)
 		return;
 
-	//есть готовые осциллограммы когда osc_internal_headers_head и osc_internal_headers_tail отличаются
+	//если нет текущей осциллограммы на отправку, то проверка ее наличия
+	if (!header_en) {
+		
+		bool new_osc_flag = false;
+
+		global_spinlock_lock();
+		if (osc_internal_headers_head != osc_internal_headers_tail) //есть готовые осциллограммы когда osc_internal_headers_head и osc_internal_headers_tail отличаются
+			new_osc_flag = true;
+		global_spinlock_unlock();
+
+		if (new_osc_flag) {
+			//заполнить header
+			osc_internal_header_t* internal_header = &osc_internal_headers[osc_internal_headers_tail];
+
+			header.id = internal_header->id;
+			header.total_length = internal_header->num;
+			header.step_time_nsecs = SurzaPeriod()*1000;
+			header.num_real = osc_num_real;
+			header.num_int = osc_num_int;
+			header.num_bool = osc_num_bool;
+			header.total_length_bytes = (osc_num_real * 4 + osc_num_real * 4 + osc_num_bool);
+			header.parts = (header.total_length_bytes / OSC_NET_MSG_SIZE_MAX) + (header.total_length_bytes%OSC_NET_MSG_SIZE_MAX)?1:0;
+			header.time = SurzaTime_sub(internal_header->time, internal_header->first_trigger*header.step_time_nsecs);
+
+
+			//отправить широковещательное сообщение OSCILLOSCOPE_MSG_NEW
+			net_msg_t* msg = net_get_msg_buf(sizeof(msg_type_oscilloscope_t)+sizeof(oscilloscope_new_t));
+			if (msg) {
+
+				msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
+				msg->subtype = 0;
+
+				msg_type_oscilloscope_t* osc_msg = (msg_type_oscilloscope_t*)&msg->data[0];
+				osc_msg->type = OSCILLOSCOPE_MSG_NEW;
+				osc_msg->size = sizeof(oscilloscope_new_t);
+				memcpy(osc_msg->md5_hash, settings_header->hash, 16);
+
+				char* new_msg = (char*)osc_msg + sizeof(msg_type_oscilloscope_t);
+				memcpy((char*)osc_msg + sizeof(msg_type_oscilloscope_t), &header, sizeof(oscilloscope_new_t));
+
+				net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL);
+			}
+
+			//
+
+
+#if 0
+			typedef struct {
+				void*        first;    //указатель на первый буфер
+				void*        last;     //указатель на последний буфер
+				unsigned     num;      //количество буферов в цепочке
+				unsigned     n_to_complete; //количество буферов необходимое для завершения осциллограммы
+				unsigned     first_trigger; //номер отсчета первого сработавшего триггера
+				surza_time_t time;     //время срабатывания первого триггера
+				uint64_t     id;       //уникальный порядковый номер осциллограммы
+			} osc_internal_header_t;
+
+			struct oscilloscope_header_t {
+				uint64_t id;                 //unique id
+				uint32_t parts;              //num of parts
+				uint32_t step_time_nsecs;    //step time in nsecs
+				uint32_t total_length;       //num of steps
+				uint32_t num_real;           //num of float
+				uint32_t num_int;            //num of int32_t
+				uint32_t num_bool;           //num of bool (uint8_t)
+				uint32_t total_length_bytes; //total osc data size in bytes
+				surza_time_t time;           //first step time
+				uint8_t  reserved[16];
+			};
+
+
+#endif
+
+
+		}
+
+	}
 
 
 }
 
+void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
+
+
+}
+
+//=======================================================================
 
 
 
