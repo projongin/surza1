@@ -42,10 +42,6 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num);
 
 
 
-//колбек для осциллографа
-void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel);
-
-
 #pragma pack(push)
 #pragma pack(1) 
 typedef struct {
@@ -380,10 +376,6 @@ int logic_init() {
 
 	//прием файла новой прошивки
 	net_add_dispatcher((uint8_t)NET_MSG_SURZA_FIRMWARE, new_firmware_callback);
-
-	//прием сообщений для осциллографа
-	net_add_dispatcher((uint8_t)NET_MSG_OSCILLOSCOPE, oscilloscope_net_callback);
-
 	
 
 	DEBUG_ADD_POINT(311);
@@ -2624,7 +2616,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 #define  OSC_TRIGGER_PERCENT_MIN   1
 #define  OSC_TRIGGER_PERCENT_MAX   99
 
-#define  OSC_NET_MSG_SIZE_MAX      (1024*1024)   //максимальный размер данных осциллограммы для передачи в одном сообщении (разбиение осциллограммы на части размером OSC_NET_MSG_SIZE_MAX)
+#define  OSC_NET_MSG_SIZE_MAX      (1024*1024)   //максимальный размер данных осциллограммы для передачи в одном сообщении (разбиение осциллограммы на части размером не более OSC_NET_MSG_SIZE_MAX)
 
 
 static bool oscilloscope_init_ok;
@@ -2657,6 +2649,9 @@ static unsigned osc_record_offset_bool;
 //размер записи одного отсчета осциллографа
 static unsigned osc_record_size;
 
+//размер записи одного отсчета осциллографа за исключением вырванивания и накладных расходов (только данные)
+static unsigned osc_record_size_raw;
+
 //общее количество доступных буферов для осциллографа
 static unsigned osc_bufs_total;
 
@@ -2674,15 +2669,33 @@ typedef struct {
 	unsigned     first_trigger; //номер отсчета первого сработавшего триггера
 	surza_time_t time;     //время срабатывания первого триггера
 	uint64_t     id;       //уникальный порядковый номер осциллограммы
+	//следующие поля используются только при отправке осциллограммы
+	unsigned     next_part;  //номер части, ожидаемый для следующей отправки
+	void*        next_buf;   //указатель на буфер, ожидаемый для следующей отправки части next_part
 } osc_internal_header_t;
 #pragma pack(pop)
 
+//список осциллограмм (текущая заполняемая, готовые к отправке и текущая отправляемая)
 static osc_internal_header_t  osc_internal_headers[OSC_INTERNAL_HEADERS_MAX];
 static unsigned osc_internal_headers_head;
 static unsigned osc_internal_headers_tail;
 
 static uint64_t osc_id;   //счетчик уникальных номеров осциллограмм
 
+//----  используются только при отправке осциллограммы
+static struct oscilloscope_header_t osc_header;
+static osc_internal_header_t* osc_internal_header_to_send;
+static bool osc_header_en;
+//-------------------------------------------------------
+
+//величина максимально передаваемой части в сообщении. высчитывается из OSC_NET_MSG_SIZE_MAX,
+//обязательно  кратна  osc_record_size_raw (для ускорения и облегчения навигации по цепочке буферов при отправке частей осциллограммы)
+static unsigned osc_part_size_max;
+static unsigned osc_part_size_max_bufs;  //то же самое, но выраженное в количестве буферов (каждый размером osc_record_size_raw)
+
+
+//колбек для обработки сообщений для осциллогорафа
+void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel);
 
 
 static void osc_free_memory() {
@@ -2705,7 +2718,6 @@ static bool init_oscilloscope() {
 		LOG_AND_SCREEN("No OSCILLOSCOPE!");
 		return true;   // осциллограф событий не используются
 	}
-
 
 	//считывание общих параметров журнала
 	param_tree_node_t* item;
@@ -2869,6 +2881,8 @@ static bool init_oscilloscope() {
 
 	osc_record_size = journal_event_offset_bool + osc_num_bool;
 
+	osc_record_size_raw = (osc_num_real * 4 + osc_num_int * 4 + osc_num_bool);
+
 	//размер делаем кратным 4
 	while (osc_record_size % 4)
 		osc_record_size++;
@@ -2909,8 +2923,17 @@ static bool init_oscilloscope() {
 	 osc_id = launchnum_get();
 	 osc_id <<= 32;
 
+	 //заголовок готовой к отправке осциллограммы
+	 osc_header_en = false;
+	 osc_internal_header_to_send = NULL;
+
+	 //расчет максимально  допустимой передаваемой части в сообщении. высчитывается из OSC_NET_MSG_SIZE_MAX,
+	 //обязательно  кратна  osc_record_size_raw
+	 osc_part_size_max_bufs = OSC_NET_MSG_SIZE_MAX / osc_record_size_raw;
+	 osc_part_size_max = osc_part_size_max_bufs * osc_record_size_raw;
+
 	//прием запросов по сети на отправку и удаление осциллограмм 
-	//net_add_dispatcher((uint8_t)NET_MSG_JOURNAL_REQUEST, journal_request_callback);
+	net_add_dispatcher((uint8_t)NET_MSG_OSCILLOSCOPE, oscilloscope_net_callback);
 
 	oscilloscope_init_ok = true;
 
@@ -2921,6 +2944,8 @@ static bool init_oscilloscope() {
 
 //копирование очередных данных после такта сурзы
 void osc_copy_data(void* buf) {
+
+	DEBUG_ADD_POINT(221);
 
 	//копирование данных real
 	if (osc_num_real) {
@@ -2934,6 +2959,8 @@ void osc_copy_data(void* buf) {
 		}
 	}
 
+	DEBUG_ADD_POINT(222);
+
 	//копирование данных int
 	if (osc_num_int) {
 		int32_t* dst_ptr = (int32_t*)((uint8_t*)buf + osc_record_offset_int);
@@ -2945,6 +2972,8 @@ void osc_copy_data(void* buf) {
 			src_ptr++;
 		}
 	}
+
+	DEBUG_ADD_POINT(223);
 
 	//копирование данных bool
 	if (osc_num_bool) {
@@ -2958,6 +2987,8 @@ void osc_copy_data(void* buf) {
 			src_ptr++;
 		}
 	}
+
+	DEBUG_ADD_POINT(224);
 
 }
 
@@ -2977,6 +3008,7 @@ void oscilloscope_add() {
 	//сохраненяемый указатель на последние данные в осциллограмме
 	static void* main_points_last_buf = NULL;
 
+	DEBUG_ADD_POINT(225);
 
 	// обнаружение срабатывания триггера
 	static bool trigger_prev = false;
@@ -2988,6 +3020,7 @@ void oscilloscope_add() {
 	trigger_prev = new_trigger;
 	//-----------------------------------------
 
+	DEBUG_ADD_POINT(226);
 
 	static int state = OSC_ADD_STATE_INITIAL;
 	bool exit ;
@@ -2998,6 +3031,8 @@ void oscilloscope_add() {
 		switch (state) {
 		case OSC_ADD_STATE_INITIAL:
 		{
+			DEBUG_ADD_POINT(227);
+
 			//проверка доступности буферов как минимум в количестве, достаточном для минимальной длины осциллограммы
 			if (buf_pool_bufs_available_fast(osc_buf_pool_num) < (int)osc_min_length)
 				break;
@@ -3023,6 +3058,8 @@ void oscilloscope_add() {
 			header->n_to_complete = osc_min_length + osc_trigger_point;
 			header->first_trigger = UINT32_MAX;
 
+			DEBUG_ADD_POINT(228);
+
 
 			//головной буфер становится текущим, переход к следующему состоянию
 			state = OSC_ADD_STATE_PREHISTORY;
@@ -3033,6 +3070,8 @@ void oscilloscope_add() {
 
 		case OSC_ADD_STATE_PREHISTORY:
 		{
+			DEBUG_ADD_POINT(229);
+
 			//получение нового буфера
 			void* new_buf = buf_pool_get_fast(osc_buf_pool_num);  //без проверки. буферы точно должны быть (условия прихода в OSC_ADD_STATE_PREHISTORY)
 
@@ -3054,9 +3093,13 @@ void oscilloscope_add() {
 			header->num++;
 			header->n_to_complete--;
 
+			DEBUG_ADD_POINT(230);
 			
 			//если преждевременно сработал триггер (до накопления всей предыстории)
 			if (trigger) {
+
+				DEBUG_ADD_POINT(231);
+
 				header->first_trigger = header->num - 1;
 				header->time = get_time();
 
@@ -3064,6 +3107,9 @@ void oscilloscope_add() {
 			}
 			else
 				if (header->num == osc_trigger_point) {  //если накоплена все предыстория, то переход в состояние ожидания триггера
+
+					DEBUG_ADD_POINT(232);
+
 					state = OSC_ADD_STATE_WAIT_TRIGGER;
 
 					//обнуление информации о сохраненных дополнительных данных в конце осциллограммы
@@ -3077,6 +3123,9 @@ void oscilloscope_add() {
 
 		case OSC_ADD_STATE_WAIT_TRIGGER:
 		{
+
+			DEBUG_ADD_POINT(233);
+
 			osc_internal_header_t* header = &osc_internal_headers[osc_internal_headers_head];
 
 			//изъятие из цепочки самого древнего буфера
@@ -3098,8 +3147,13 @@ void oscilloscope_add() {
 
 			header->last = new_buf;
 
+			DEBUG_ADD_POINT(234);
+
 			//если сработал триггер
 			if (trigger) {
+
+				DEBUG_ADD_POINT(235);
+
 				header->first_trigger = header->num - 1;
 				header->time = get_time();
 				state = OSC_ADD_STATE_HISTORY;
@@ -3112,11 +3166,16 @@ void oscilloscope_add() {
 
 		case OSC_ADD_STATE_HISTORY:
 		{
+			DEBUG_ADD_POINT(236);
+
 			osc_internal_header_t* header = &osc_internal_headers[osc_internal_headers_head];
 
 			//получение нового буфера
 			void* new_buf = buf_pool_get_fast(osc_buf_pool_num);
 			if (!new_buf) {
+
+				DEBUG_ADD_POINT(237);
+
 				//буферы закончились. сохранение осциллограммы как есть и уход в изначальное состояние
 				header->id = osc_id++;
 				state = OSC_ADD_STATE_INITIAL;
@@ -3140,6 +3199,8 @@ void oscilloscope_add() {
 			header->num++;
 			header->n_to_complete--;
 
+			DEBUG_ADD_POINT(238);
+
 			//сохранение указателя на последнюю точку перед записью дополнительных точек
 			if(header->n_to_complete == osc_trigger_point)
 				main_points_last_buf = new_buf;
@@ -3151,6 +3212,8 @@ void oscilloscope_add() {
 
 			//проверка на конец записи осциллограммы
 			if (header->n_to_complete == 0) {  //сохранение осциллограммы
+
+				DEBUG_ADD_POINT(239);
 				
 				header->id = osc_id++;
 				
@@ -3169,6 +3232,9 @@ void oscilloscope_add() {
 
 				}
 				else {
+
+					DEBUG_ADD_POINT(240);
+
 					//перенос предыстории в новую осциллограмму
 
 					osc_internal_header_t* new_header = &osc_internal_headers[tmp];
@@ -3184,6 +3250,8 @@ void oscilloscope_add() {
 					header->last = main_points_last_buf;
 					*(void**)header->last = NULL;
 					header->num -= osc_trigger_point;
+
+					DEBUG_ADD_POINT(241);
 
 					//окончательно переключаемся на новую структуру
 					osc_internal_headers_head = tmp;
@@ -3210,15 +3278,13 @@ void oscilloscope_add() {
 
 void oscilloscope_update() {
 
-	static struct oscilloscope_header_t header;
-	static bool header_en = false;
-
-
 	if (!oscilloscope_init_ok)
 		return;
 
 	//если нет текущей осциллограммы на отправку, то проверка ее наличия
-	if (!header_en) {
+	if (!osc_header_en) {
+
+		DEBUG_ADD_POINT(242);
 		
 		bool new_osc_flag = false;
 
@@ -3228,23 +3294,33 @@ void oscilloscope_update() {
 		global_spinlock_unlock();
 
 		if (new_osc_flag) {
+
+			DEBUG_ADD_POINT(243);
+
 			//заполнить header
 			osc_internal_header_t* internal_header = &osc_internal_headers[osc_internal_headers_tail];
 
-			header.id = internal_header->id;
-			header.total_length = internal_header->num;
-			header.step_time_nsecs = SurzaPeriod()*1000;
-			header.num_real = osc_num_real;
-			header.num_int = osc_num_int;
-			header.num_bool = osc_num_bool;
-			header.total_length_bytes = (osc_num_real * 4 + osc_num_real * 4 + osc_num_bool);
-			header.parts = (header.total_length_bytes / OSC_NET_MSG_SIZE_MAX) + (header.total_length_bytes%OSC_NET_MSG_SIZE_MAX)?1:0;
-			header.time = SurzaTime_sub(internal_header->time, internal_header->first_trigger*header.step_time_nsecs);
+			osc_header.id = internal_header->id;
+			osc_header.total_length = internal_header->num;
+			osc_header.step_time_nsecs = SurzaPeriod()*1000;
+			osc_header.num_real = osc_num_real;
+			osc_header.num_int = osc_num_int;
+			osc_header.num_bool = osc_num_bool;
+			osc_header.total_length_bytes = osc_record_size_raw * osc_header.total_length;
+			osc_header.parts = (osc_header.total_length_bytes / osc_part_size_max) + (osc_header.total_length_bytes%osc_part_size_max)?1:0;
+			osc_header.time = SurzaTime_sub(internal_header->time, internal_header->first_trigger*osc_header.step_time_nsecs);
 
+			//заполнение полей для отправки
+			osc_internal_header_to_send = internal_header;
+			osc_internal_header_to_send->next_part = 0;
+			osc_internal_header_to_send->next_buf = internal_header->first;
+			
 
 			//отправить широковещательное сообщение OSCILLOSCOPE_MSG_NEW
 			net_msg_t* msg = net_get_msg_buf(sizeof(msg_type_oscilloscope_t)+sizeof(oscilloscope_new_t));
 			if (msg) {
+
+				DEBUG_ADD_POINT(244);
 
 				msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
 				msg->subtype = 0;
@@ -3254,52 +3330,233 @@ void oscilloscope_update() {
 				osc_msg->size = sizeof(oscilloscope_new_t);
 				memcpy(osc_msg->md5_hash, settings_header->hash, 16);
 
-				char* new_msg = (char*)osc_msg + sizeof(msg_type_oscilloscope_t);
-				memcpy((char*)osc_msg + sizeof(msg_type_oscilloscope_t), &header, sizeof(oscilloscope_new_t));
+				DEBUG_ADD_POINT(245);
+
+				memcpy((char*)(osc_msg+1), &osc_header, sizeof(oscilloscope_new_t));
+
+				DEBUG_ADD_POINT(246);
 
 				net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL);
 			}
 
-			//
-
-
-#if 0
-			typedef struct {
-				void*        first;    //указатель на первый буфер
-				void*        last;     //указатель на последний буфер
-				unsigned     num;      //количество буферов в цепочке
-				unsigned     n_to_complete; //количество буферов необходимое для завершения осциллограммы
-				unsigned     first_trigger; //номер отсчета первого сработавшего триггера
-				surza_time_t time;     //время срабатывания первого триггера
-				uint64_t     id;       //уникальный порядковый номер осциллограммы
-			} osc_internal_header_t;
-
-			struct oscilloscope_header_t {
-				uint64_t id;                 //unique id
-				uint32_t parts;              //num of parts
-				uint32_t step_time_nsecs;    //step time in nsecs
-				uint32_t total_length;       //num of steps
-				uint32_t num_real;           //num of float
-				uint32_t num_int;            //num of int32_t
-				uint32_t num_bool;           //num of bool (uint8_t)
-				uint32_t total_length_bytes; //total osc data size in bytes
-				surza_time_t time;           //first step time
-				uint8_t  reserved[16];
-			};
-
-
-#endif
-
+			osc_header_en = true;
 
 		}
 
-	}
+		DEBUG_ADD_POINT(247);
 
+	}
 
 }
 
 void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 
+	DEBUG_ADD_POINT(260);
+
+	// проверка полученного сообщения
+	if (msg->size < sizeof(msg_type_oscilloscope_t)
+		|| msg->type != (uint8_t)NET_MSG_OSCILLOSCOPE)
+		return;
+
+	if (!oscilloscope_init_ok)
+		return;
+
+	msg_type_oscilloscope_t* osc_msg = (msg_type_oscilloscope_t*)&msg->data[0];
+	if (memcmp(osc_msg->md5_hash, settings_header->hash, 16))
+		return;
+
+	if (!osc_header_en)
+		return;
+
+	DEBUG_ADD_POINT(261);
+
+	//отправка ответов
+	switch (osc_msg->type) {
+	case OSCILLOSCOPE_MSG_REQUEST_NEW:
+		{
+		    DEBUG_ADD_POINT(262);
+
+			const unsigned msg_size = sizeof(msg_type_oscilloscope_t) + sizeof(oscilloscope_new_t);
+			if (net_msg_buf_get_available_space(msg) < msg_size) {
+				msg = net_get_msg_buf(msg_size);
+				if (!msg)
+					return;
+			}
+
+			msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
+			msg->subtype = 0;
+
+			DEBUG_ADD_POINT(263);
+
+			msg_type_oscilloscope_t* osc_msg = (msg_type_oscilloscope_t*)&msg->data[0];
+			osc_msg->type = OSCILLOSCOPE_MSG_NEW;
+			osc_msg->size = sizeof(oscilloscope_new_t);
+			memcpy(osc_msg->md5_hash, settings_header->hash, 16);
+
+			DEBUG_ADD_POINT(264);
+
+
+			memcpy((char*)(osc_msg+1), &osc_header, sizeof(oscilloscope_new_t));
+
+			DEBUG_ADD_POINT(265);
+
+			net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
+		}
+		break;
+
+	case OSCILLOSCOPE_MSG_REQUEST_DATA:
+	    {
+		DEBUG_ADD_POINT(266);
+
+		if (osc_msg->size < sizeof(oscilloscope_request_data_t))
+			return;
+
+		oscilloscope_request_data_t* request = (oscilloscope_request_data_t*)(osc_msg + 1);
+		if (request->id != osc_header.id
+			|| request->part >= osc_header.parts )
+			return;
+
+		unsigned part = request->part;
+		unsigned data_size = (part == osc_header.parts - 1) ? (osc_header.total_length_bytes % osc_part_size_max) : osc_part_size_max;
+		const unsigned msg_size = sizeof(msg_type_oscilloscope_t) + sizeof(oscilloscope_data_t) + data_size;
+
+		DEBUG_ADD_POINT(267);
+
+		if (net_msg_buf_get_available_space(msg) < msg_size) {
+			msg = net_get_msg_buf(msg_size);
+			if (!msg)
+				return;
+		}
+
+		
+		msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
+		msg->subtype = 0;
+
+		msg_type_oscilloscope_t* osc_msg = (msg_type_oscilloscope_t*)&msg->data[0];
+		osc_msg->type = OSCILLOSCOPE_MSG_DATA;
+		osc_msg->size = sizeof(oscilloscope_data_t) + data_size;
+		memcpy(osc_msg->md5_hash, settings_header->hash, 16);
+
+		DEBUG_ADD_POINT(268);
+
+		oscilloscope_data_t* osc_data = (oscilloscope_data_t*)(osc_msg + 1);
+		osc_data->id = osc_header.id;
+		osc_data->part = part;
+		osc_data->part = data_size;
+
+		//количество буферов, которое необходимо скопировать
+		unsigned bufs_to_copy = data_size / osc_record_size_raw;
+
+		//указатель на начальный буфер для копирования
+		void *buf = osc_internal_header_to_send->next_buf;
+
+		DEBUG_ADD_POINT(269);
+
+		//если запрашивается не ожидаемая по порядку часть
+		if (part != osc_internal_header_to_send->next_part) {
+
+			DEBUG_ADD_POINT(270);
+
+			//найти буфер, соответствующий запрашиваемой части 
+			unsigned n_bufs = part * osc_part_size_max_bufs;
+			buf = osc_internal_header_to_send->first;
+
+			if (osc_internal_header_to_send->next_part < part) { //очень маловероятно, но пусть будет
+				//сокращаем поиск, стартуя с уже известного сохраненного буфера
+				n_bufs -= osc_internal_header_to_send->next_part * osc_part_size_max_bufs;
+				buf = osc_internal_header_to_send->next_buf;
+			}
+
+			DEBUG_ADD_POINT(271);
+			
+			while (n_bufs) {
+				n_bufs--;
+				if (buf == NULL) {
+					net_free_msg_buf(msg);
+					return;
+				}
+				buf = *(void**)buf;
+			}
+			
+		}
+
+		DEBUG_ADD_POINT(272);
+		
+		//копирование данных
+		char* dst_ptr = (char*)(osc_data + 1);
+		while (bufs_to_copy) {
+			bufs_to_copy--;
+
+			if (buf == NULL) {
+				net_free_msg_buf(msg);
+				return;
+			}
+			memcpy(dst_ptr, (char*)buf + osc_record_offset_real, osc_record_size_raw);
+
+			dst_ptr += osc_record_size_raw;
+			buf = *(void**)buf;
+		}
+
+		DEBUG_ADD_POINT(273);
+
+		//если копировали ожидаемую часть, то продвигаем сохраненный указатель и номер новой ожидаемой части
+		if (part == osc_internal_header_to_send->next_part) {
+			osc_internal_header_to_send->next_buf = buf;
+			osc_internal_header_to_send->next_part++;
+		}
+
+
+		net_send_msg(msg, NET_PRIORITY_LOW, channel);
+
+	    }
+		break;
+
+	case OSCILLOSCOPE_MSG_REQUEST_DELETE:
+
+		DEBUG_ADD_POINT(274);
+
+		if (osc_msg->size < sizeof(oscilloscope_request_delete_t))
+			return;
+
+		oscilloscope_request_delete_t * request = (oscilloscope_request_delete_t*)(osc_msg + 1);
+		if (request->id != osc_header.id)
+			return;
+
+		DEBUG_ADD_POINT(275);
+
+		//освободить все занятые буферы
+		void* buf;
+		do {
+			
+			buf = osc_internal_header_to_send->first;
+
+			osc_internal_header_to_send->first = *(void**)osc_internal_header_to_send->first;
+
+			global_spinlock_lock();
+			   buf_pool_free_fast(osc_buf_pool_num, buf);
+			global_spinlock_unlock();
+
+		} while (buf != osc_internal_header_to_send->last);
+
+		DEBUG_ADD_POINT(276);
+	    		
+
+		//передвинуть указатель хвоста в очереди осциллограмм
+		global_spinlock_lock();
+		osc_internal_headers_tail++;
+		if (osc_internal_headers_tail == OSC_INTERNAL_HEADERS_MAX)
+			osc_internal_headers_tail = 0;
+		global_spinlock_unlock();
+
+		DEBUG_ADD_POINT(277);
+
+		//указать, что больше нет текущей передаваемой осицллограммы
+		osc_header_en = false;
+
+		break;
+
+	default: return;
+	}
 
 }
 
