@@ -2659,21 +2659,20 @@ static unsigned osc_bufs_total;
 static int osc_buf_pool_num;
 
 
-#pragma pack(push)
-#pragma pack(1) 
 typedef struct {
-	void*        first;    //указатель на первый буфер
-	void*        last;     //указатель на последний буфер
-	unsigned     num;      //количество буферов в цепочке
+	void*        first;         //указатель на первый буфер
+	void*        last;          //указатель на последний буфер
+	unsigned     num;           //количество буферов в цепочке
 	unsigned     n_to_complete; //количество буферов необходимое для завершения осциллограммы
 	unsigned     first_trigger; //номер отсчета первого сработавшего триггера
-	surza_time_t time;     //время срабатывания первого триггера
-	uint64_t     id;       //уникальный порядковый номер осциллограммы
+	surza_time_t time;          //время срабатывания первого триггера
+	uint64_t     id;            //уникальный порядковый номер осциллограммы
+	unsigned     finished;      //признак готовности осциллограммы (все буферы записаны, готова к отправке)
 	//следующие поля используются только при отправке осциллограммы
 	unsigned     next_part;  //номер части, ожидаемый для следующей отправки
 	void*        next_buf;   //указатель на буфер, ожидаемый для следующей отправки части next_part
 } osc_internal_header_t;
-#pragma pack(pop)
+
 
 //список осциллограмм (текущая заполняемая, готовые к отправке и текущая отправляемая)
 static osc_internal_header_t  osc_internal_headers[OSC_INTERNAL_HEADERS_MAX];
@@ -2731,7 +2730,10 @@ static bool init_oscilloscope() {
 	item = ParamTree_Find(osc_node, "trigger_point", PARAM_TREE_SEARCH_ITEM);
 	if (!item || !item->value)  return false;
 	if (sscanf_s(item->value, "%u", &osc_trigger_percent) <= 0) return false;
-	if (osc_trigger_percent<OSC_TRIGGER_PERCENT_MIN || osc_trigger_percent>OSC_TRIGGER_PERCENT_MAX) return false;
+	if (osc_trigger_percent < OSC_TRIGGER_PERCENT_MIN)
+		osc_trigger_percent = OSC_TRIGGER_PERCENT_MIN;
+	if (osc_trigger_percent > OSC_TRIGGER_PERCENT_MAX)
+		osc_trigger_percent = OSC_TRIGGER_PERCENT_MAX;
 
 	item = ParamTree_Find(osc_node, "trigger_num", PARAM_TREE_SEARCH_ITEM);
 	if (!item || !item->value)  return false;
@@ -2876,10 +2878,10 @@ static bool init_oscilloscope() {
 
 	//подсчет смещений для последующего быстрого доступа в прерывании
 	osc_record_offset_real = 4;  //первые 4 байта содержат указатель на следующий буфер в цепочке, иначе NULL
-	osc_record_offset_int = journal_event_offset_real + osc_num_real * 4;
-	osc_record_offset_bool = journal_event_offset_int + osc_num_int * 4;
+	osc_record_offset_int = osc_record_offset_real + osc_num_real * 4;
+	osc_record_offset_bool = osc_record_offset_int + osc_num_int * 4;
 
-	osc_record_size = journal_event_offset_bool + osc_num_bool;
+	osc_record_size = osc_record_offset_bool + osc_num_bool;
 
 	osc_record_size_raw = (osc_num_real * 4 + osc_num_int * 4 + osc_num_bool);
 
@@ -2917,6 +2919,8 @@ static bool init_oscilloscope() {
 	//указатели готовых осциллограмм
 	osc_internal_headers_head = 0;
 	osc_internal_headers_tail = 0;
+	//сброс признака готовности
+	osc_internal_headers[osc_internal_headers_head].finished = 0;
 	
 	
 	 //уникальный номер
@@ -2995,9 +2999,10 @@ void osc_copy_data(void* buf) {
 
 
 #define OSC_ADD_STATE_INITIAL         0
-#define OSC_ADD_STATE_PREHISTORY      1
-#define OSC_ADD_STATE_WAIT_TRIGGER    2
-#define OSC_ADD_STATE_HISTORY         3
+#define OSC_ADD_STATE_WAIT_BUFS       1
+#define OSC_ADD_STATE_PREHISTORY      2
+#define OSC_ADD_STATE_WAIT_TRIGGER    3
+#define OSC_ADD_STATE_HISTORY         4
 
 
 void oscilloscope_add() {
@@ -3005,7 +3010,7 @@ void oscilloscope_add() {
 	if (!oscilloscope_init_ok)
 		return;
 
-	//сохраненяемый указатель на последние данные в осциллограмме
+	//сохраняемый указатель на последние данные в осциллограмме
 	static void* main_points_last_buf = NULL;
 
 	DEBUG_ADD_POINT(225);
@@ -3033,19 +3038,31 @@ void oscilloscope_add() {
 		{
 			DEBUG_ADD_POINT(227);
 
-			//проверка доступности буферов как минимум в количестве, достаточном для минимальной длины осциллограммы
-			if (buf_pool_bufs_available_fast(osc_buf_pool_num) < (int)osc_min_length)
-				break;
-
-			if (osc_internal_headers_head != osc_internal_headers_tail) {  //есть уже готовые осциллограммы, надо взять новую структуру
+			//если есть уже готовые осциллограммы (указатели головы и хвоста отличаются, либо добавлена только одна большая
+			//осциллограмма и указатель головы в таком случае еще не передвинут (osc_internal_headers_head == osc_internal_headers_tail), но установлен признак finished)
+			if(   osc_internal_headers_head != osc_internal_headers_tail
+			  || (osc_internal_headers_head == osc_internal_headers_tail && osc_internal_headers[osc_internal_headers_head].finished)){
 				//попытка взять новую свободную структуру
 				unsigned tmp = osc_internal_headers_head + 1;
 				if (tmp == OSC_INTERNAL_HEADERS_MAX)
 					tmp = 0;
-				if (tmp != osc_internal_headers_tail) //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
+				if (tmp == osc_internal_headers_tail) //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
 					break;
 				osc_internal_headers_head = tmp;
-			}
+		    }
+
+			state = OSC_ADD_STATE_WAIT_BUFS;
+		    exit = false;
+		}
+		    break;
+
+		case OSC_ADD_STATE_WAIT_BUFS:
+		{
+			//если недостаточно буферов - то ничего не делаем.
+			if (buf_pool_bufs_available_fast(osc_buf_pool_num) < (int)osc_min_length)
+				break;
+
+			DEBUG_ADD_POINT(228);
 
 			//структура для  осциллограммы найдена, заполняю ее начальным состоянием
 
@@ -3058,10 +3075,13 @@ void oscilloscope_add() {
 			header->n_to_complete = osc_min_length + osc_trigger_point;
 			header->first_trigger = UINT32_MAX;
 
-			DEBUG_ADD_POINT(228);
+			//сброс флага готовности
+			header->finished = 0;
 
+			//обнуление информации о сохраненных дополнительных данных в конце осциллограммы
+			main_points_last_buf = NULL;
 
-			//головной буфер становится текущим, переход к следующему состоянию
+			//головная структура становится текущей, переход к следующему состоянию
 			state = OSC_ADD_STATE_PREHISTORY;
 			exit = false;
 		}
@@ -3100,6 +3120,10 @@ void oscilloscope_add() {
 
 				DEBUG_ADD_POINT(231);
 
+				//корректировка оставшегося для записи количества точек
+				//(длина после триггера + предыстория для следующей осциллограммы)
+				header->n_to_complete = osc_min_length;
+
 				header->first_trigger = header->num - 1;
 				header->time = get_time();
 
@@ -3111,9 +3135,6 @@ void oscilloscope_add() {
 					DEBUG_ADD_POINT(232);
 
 					state = OSC_ADD_STATE_WAIT_TRIGGER;
-
-					//обнуление информации о сохраненных дополнительных данных в конце осциллограммы
-					main_points_last_buf = NULL;
 				}
 
 
@@ -3178,6 +3199,7 @@ void oscilloscope_add() {
 
 				//буферы закончились. сохранение осциллограммы как есть и уход в изначальное состояние
 				header->id = osc_id++;
+				header->finished = 1;
 				state = OSC_ADD_STATE_INITIAL;
 				break;
 			}
@@ -3216,6 +3238,7 @@ void oscilloscope_add() {
 				DEBUG_ADD_POINT(239);
 				
 				header->id = osc_id++;
+				header->finished = 1;
 				
 				//получение новой структуры под следующую осциллограмму и перенос предыстории в нее
 				//при отсутствии структуры для новой осциллограммы дополнительные данные остаются в текущей с переходом в изначальное состояние (чтобы избежать долгое высвобождение буферов в прерывании)
@@ -3224,10 +3247,11 @@ void oscilloscope_add() {
 				unsigned tmp = osc_internal_headers_head + 1;
 				if (tmp == OSC_INTERNAL_HEADERS_MAX)
 					tmp = 0;
-				if (tmp != osc_internal_headers_tail) { //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
+				if (tmp == osc_internal_headers_tail) { //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
 
 					//переход в начальное состояние
-					//пока в начальном состоянии не будет получена новая структура - процесс осциллографирования приостанавливается (скопилось слишком нмого неотправленных осциллограмм)
+					//пока не будет получено необходимого количества буферов - процесс осциллографирования приостанавливается
+					//(скопилось слишком много неотправленных осциллограмм, либо одна большая, занявшая все доступные буферы)
 					state = OSC_ADD_STATE_INITIAL;
 
 				}
@@ -3245,6 +3269,7 @@ void oscilloscope_add() {
 					new_header->num = osc_trigger_point;
 					new_header->n_to_complete = osc_min_length;  //требуется писать минимальную длину + дополнительную предысторию. но так как она уже есть, то только минимальную длину
 					new_header->first_trigger = UINT32_MAX;
+					new_header->finished = 0;
 
 					//обрубаем дополнительные данные в текущей
 					header->last = main_points_last_buf;
@@ -3307,7 +3332,7 @@ void oscilloscope_update() {
 			osc_header.num_int = osc_num_int;
 			osc_header.num_bool = osc_num_bool;
 			osc_header.total_length_bytes = osc_record_size_raw * osc_header.total_length;
-			osc_header.parts = (osc_header.total_length_bytes / osc_part_size_max) + (osc_header.total_length_bytes%osc_part_size_max)?1:0;
+			osc_header.parts = (osc_header.total_length_bytes / osc_part_size_max) + ((osc_header.total_length_bytes%osc_part_size_max)?1:0);
 			osc_header.time = SurzaTime_sub(internal_header->time, internal_header->first_trigger*osc_header.step_time_nsecs);
 
 			//заполнение полей для отправки
@@ -3550,7 +3575,7 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 
 		DEBUG_ADD_POINT(277);
 
-		//указать, что больше нет текущей передаваемой осицллограммы
+		//указать, что больше нет текущей передаваемой осциллограммы
 		osc_header_en = false;
 
 		break;
@@ -3561,6 +3586,34 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 }
 
 //=======================================================================
+
+
+void osc_test_func() {
+
+	static unsigned step = 0;
+
+
+	/*
+	MATH_IO_REAL_OUT[2] = f[0];
+	MATH_IO_REAL_OUT[5] = f[1];
+	MATH_IO_REAL_OUT[6] = f[2];
+
+	MATH_IO_INT_OUT[2] = i;
+
+	MATH_IO_BOOL_OUT[3] = b[0];
+	MATH_IO_BOOL_OUT[0] = b[1];
+	*/
+	step++;
+
+	if ((step % 10000) == 0) {
+		MATH_IO_BOOL_OUT[11] = 1;
+	}
+	else MATH_IO_BOOL_OUT[11] = 0;
+	
+	
+    oscilloscope_add();
+
+}
 
 
 
@@ -3904,7 +3957,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	// ====== вызов МЯДа  ==================
 	DEBUG_ADD_POINT(22);
-    MYD_step();
+    //MYD_step();
 	DEBUG_ADD_POINT(23);
 	// =====================================
 
@@ -3980,7 +4033,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	journal_add();
 
 	DEBUG_ADD_POINT(29);
-	oscilloscope_add();
+	//oscilloscope_add();
 
 	DEBUG_ADD_POINT(35);
 

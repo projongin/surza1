@@ -250,6 +250,11 @@ int  main(int argc, char * argv[])
             #endif
 
 
+
+			/**************/
+			extern void osc_test_func();
+			osc_test_func();
+			/***************/
 			
 
 
