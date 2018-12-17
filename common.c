@@ -275,3 +275,4 @@ int __stdcall get_cpu_clks() {
 		rdtsc
 	}
 }
+

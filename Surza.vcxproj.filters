@@ -87,6 +87,9 @@
     <ClCompile Include="cpu_exception.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="win32_stub.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="net.h">
@@ -149,5 +152,8 @@
     <ClInclude Include="cpu_exception.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="win32_stub.asm" />
   </ItemGroup>
 </Project>

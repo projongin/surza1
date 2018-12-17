@@ -252,8 +252,8 @@ int  main(int argc, char * argv[])
 
 
 			/**************/
-			extern void osc_test_func();
-			osc_test_func();
+			//extern void osc_test_func();
+			//osc_test_func();
 			/***************/
 			
 
@@ -307,3 +307,5 @@ int  main(int argc, char * argv[])
 
 	return(0);
 }
+
+

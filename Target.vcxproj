@@ -101,7 +101,7 @@
     </CustomBuild>
     <CustomBuild Include="Debug\Monitor.rtb">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" F: 
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
 if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Creating Monitor Boot Diskette</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)\BootDisk.txt;%(Outputs)</Outputs>

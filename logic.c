@@ -2562,13 +2562,14 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 	if (request->request == MSG_JOURNAL_REQUEST_GET) {
 
 		//отправляем найденное событие
-		size_t msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
-
-
-		if (net_msg_buf_get_available_space(msg) < sizeof(journal_msg_size)) {
+		
+		if (net_msg_buf_get_available_space(msg) < journal_msg_size) {
 			msg = net_get_msg_buf(journal_msg_size);
 			if (!msg)
 				return;
+		}
+		else {
+			msg->size = journal_msg_size;
 		}
 
 		DEBUG_ADD_POINT(216);
@@ -3407,6 +3408,9 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 				if (!msg)
 					return;
 			}
+			else {
+				msg->size = msg_size;
+			}
 
 			msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
 			msg->subtype = 0;
@@ -3452,6 +3456,9 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 			if (!msg)
 				return;
 		}
+		else {
+			msg->size = msg_size;
+		}
 
 		
 		msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
@@ -3467,7 +3474,7 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 		oscilloscope_data_t* osc_data = (oscilloscope_data_t*)(osc_msg + 1);
 		osc_data->id = osc_header.id;
 		osc_data->part = part;
-		osc_data->part = data_size;
+		osc_data->part_length_bytes = data_size;
 
 		//количество буферов, которое необходимо скопировать
 		unsigned bufs_to_copy = data_size / osc_record_size_raw;
@@ -3592,6 +3599,9 @@ void osc_test_func() {
 
 	static unsigned step = 0;
 
+	static float test_f = 0.0f;
+	static int32_t test_i = 0;
+	static bool test_b = false;
 
 	/*
 	MATH_IO_REAL_OUT[2] = f[0];
@@ -3605,11 +3615,28 @@ void osc_test_func() {
 	*/
 	step++;
 
-	if ((step % 10000) == 0) {
+	test_f += 0.5f;
+	if (test_f > 100000.0f)
+		test_f = 0.0f;
+	test_i++;
+	test_b = !test_b;
+	
+
+	if ((step % 7000) == 0) {
 		MATH_IO_BOOL_OUT[11] = 1;
 	}
 	else MATH_IO_BOOL_OUT[11] = 0;
 	
+
+	MATH_IO_REAL_OUT[17] = test_f;
+	MATH_IO_REAL_OUT[7] = test_f + 1.0f;
+	MATH_IO_REAL_OUT[3] = test_f + 10.0f;
+
+	MATH_IO_INT_OUT[11] = test_i;
+
+	MATH_IO_BOOL_OUT[7] = test_b;
+	MATH_IO_BOOL_OUT[29] = !test_b;
+
 	
     oscilloscope_add();
 
@@ -4034,6 +4061,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	DEBUG_ADD_POINT(29);
 	//oscilloscope_add();
+	osc_test_func();
 
 	DEBUG_ADD_POINT(35);
 
