@@ -251,13 +251,6 @@ int  main(int argc, char * argv[])
 
 
 
-			/**************/
-			//extern void osc_test_func();
-			//osc_test_func();
-			/***************/
-			
-
-
 #if 0
 			extern int test_time;
 			time = RTKGetTime();

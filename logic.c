@@ -3984,7 +3984,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	// ====== גûחמג Ì‗Äא  ==================
 	DEBUG_ADD_POINT(22);
-    //MYD_step();
+    MYD_step();
 	DEBUG_ADD_POINT(23);
 	// =====================================
 
@@ -4060,8 +4060,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	journal_add();
 
 	DEBUG_ADD_POINT(29);
-	//oscilloscope_add();
-	osc_test_func();
+	oscilloscope_add();
 
 	DEBUG_ADD_POINT(35);
 
