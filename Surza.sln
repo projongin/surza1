@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.27004.2002
+VisualStudioVersion = 15.0.27130.2026
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Surza", "Surza.vcxproj", "{4C48E7F3-6CD8-4286-664A-ED61479795AE}"
 EndProject
@@ -12,17 +12,27 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Target", "Target.vcxproj", 
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug_old_rtos|Win32 = Debug_old_rtos|Win32
+		Debug_old_rtos|x64 = Debug_old_rtos|x64
 		Debug|Win32 = Debug|Win32
 		Debug|x64 = Debug|x64
+		Release_old_rtos|Win32 = Release_old_rtos|Win32
+		Release_old_rtos|x64 = Release_old_rtos|x64
 		Release|Win32 = Release|Win32
 		Release|x64 = Release|x64
 		Template|Win32 = Template|Win32
 		Template|x64 = Template|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Debug_old_rtos|Win32.ActiveCfg = Debug_old_rtos|Win32
+		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Debug_old_rtos|Win32.Build.0 = Debug_old_rtos|Win32
+		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Debug_old_rtos|x64.ActiveCfg = Debug_old_rtos|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Debug|Win32.ActiveCfg = Debug|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Debug|Win32.Build.0 = Debug|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Debug|x64.ActiveCfg = Debug|Win32
+		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Release_old_rtos|Win32.ActiveCfg = Release_old_rtos|Win32
+		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Release_old_rtos|Win32.Build.0 = Release_old_rtos|Win32
+		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Release_old_rtos|x64.ActiveCfg = Release_old_rtos|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Release|Win32.ActiveCfg = Release|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Release|Win32.Build.0 = Release|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Release|x64.ActiveCfg = Release|Win32
@@ -30,9 +40,15 @@ Global
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Template|Win32.Build.0 = Release|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Template|x64.ActiveCfg = Release|Win32
 		{4C48E7F3-6CD8-4286-664A-ED61479795AE}.Template|x64.Build.0 = Release|Win32
+		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Debug_old_rtos|Win32.ActiveCfg = Debug_old_rtos|Win32
+		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Debug_old_rtos|Win32.Build.0 = Debug_old_rtos|Win32
+		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Debug_old_rtos|x64.ActiveCfg = Debug_old_rtos|Win32
 		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Debug|Win32.ActiveCfg = Debug|Win32
 		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Debug|Win32.Build.0 = Debug|Win32
 		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Debug|x64.ActiveCfg = Debug|Win32
+		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Release_old_rtos|Win32.ActiveCfg = Release_old_rtos|Win32
+		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Release_old_rtos|Win32.Build.0 = Release_old_rtos|Win32
+		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Release_old_rtos|x64.ActiveCfg = Release_old_rtos|Win32
 		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Release|Win32.ActiveCfg = Release|Win32
 		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Release|Win32.Build.0 = Release|Win32
 		{DBA4BF0F-0EA7-E7FD-46D1-A44385F97668}.Release|x64.ActiveCfg = Release|Win32

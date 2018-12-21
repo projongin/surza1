@@ -1,8 +1,16 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug_old_rtos|Win32">
+      <Configuration>Debug_old_rtos</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release_old_rtos|Win32">
+      <Configuration>Release_old_rtos</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32">
@@ -31,7 +39,17 @@
     <UseOfMfc>false</UseOfMfc>
     <PlatformToolset>v141_xp</PlatformToolset>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <PlatformToolset>v141_xp</PlatformToolset>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <PlatformToolset>v141_xp</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'" Label="Configuration">
     <ConfigurationType>Utility</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
     <PlatformToolset>v141_xp</PlatformToolset>
@@ -46,12 +64,29 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
   </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>.\Debug\</OutDir>
+    <IntDir>.\Debug_target\</IntDir>
+    <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>$(RTTarget)\Include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(RTTarget)\Libmsvc;$(LibraryPath)</LibraryPath>
+    <TargetName>Surza</TargetName>
+    <TargetExt>.exe</TargetExt>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">
     <OutDir>.\Debug\</OutDir>
     <IntDir>.\Debug_target\</IntDir>
     <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
@@ -67,12 +102,29 @@
     <LibraryPath>$(RTTarget)\Libmsvc;$(LibraryPath)</LibraryPath>
     <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">
+    <OutDir>.\Release\</OutDir>
+    <IntDir>.\Release_target\</IntDir>
+    <IncludePath>$(RTTarget)\Include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(RTTarget)\Libmsvc;$(LibraryPath)</LibraryPath>
+    <ExecutablePath>$(RTTarget)\Bin;$(ExecutablePath)</ExecutablePath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Midl>
       <TypeLibraryName>.\Debug\Target.tlb</TypeLibraryName>
     </Midl>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">
+    <Midl>
+      <TypeLibraryName>.\Debug\Target.tlb</TypeLibraryName>
+    </Midl>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Midl>
+      <TypeLibraryName>.\Release\Target.tlb</TypeLibraryName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">
     <Midl>
       <TypeLibraryName>.\Release\Target.tlb</TypeLibraryName>
     </Midl>
@@ -84,38 +136,63 @@
     <CustomBuild Include="Monitor.cfg">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">"$(RTTarget)\Bin\RTLoc" -DBOOT "$(OutDir)Monitor" Demopc.cfg Monitor.cfg</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">"$(RTTarget)\Bin\RTLoc" -DBOOT "$(OutDir)Monitor" Demopc.cfg Monitor.cfg</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Locate Monitor</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">Locate Monitor</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)\Monitor.rtb;%(Outputs)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">$(OutDir)\Monitor.rtb;%(Outputs)</Outputs>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Demopc.cfg;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">Demopc.cfg;%(AdditionalInputs)</AdditionalInputs>
     </CustomBuild>
     <CustomBuild Include="Surza.cfg">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">"$(RTTarget)\Bin\RTLoc" "$(OutDir)Surza" Demopc.cfg Surza.cfg</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">"$(RTTarget)\Bin\RTLoc" "$(OutDir)Surza" Demopc.cfg Surza.cfg</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Locate Surza</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">Locate Surza</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)\Surza.rtb;%(Outputs)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">$(OutDir)\Surza.rtb;%(Outputs)</Outputs>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Demopc.cfg;$(OutDir)\Monitor.rtb;$(OutDir)\Surza.exe;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">Demopc.cfg;$(OutDir)\Monitor.rtb;$(OutDir)\Surza.exe;%(AdditionalInputs)</AdditionalInputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">"$(RTTarget)\Bin\RTLoc" -DBOOT "$(OutDir)Surza" Demopc.cfg Surza.cfg</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">"$(RTTarget)\Bin\RTLoc" -DBOOT "$(OutDir)Surza" Demopc.cfg Surza.cfg</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Locate Surza</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">Locate Surza</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(OutDir)\Surza.rtb;%(Outputs)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">$(OutDir)\Surza.rtb;%(Outputs)</Outputs>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Demopc.cfg;$(OutDir)\Surza.exe;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">Demopc.cfg;$(OutDir)\Surza.exe;%(AdditionalInputs)</AdditionalInputs>
     </CustomBuild>
     <CustomBuild Include="Debug\Monitor.rtb">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
 if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
+if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Creating Monitor Boot Diskette</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">Creating Monitor Boot Diskette</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)\BootDisk.txt;%(Outputs)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">$(OutDir)\BootDisk.txt;%(Outputs)</Outputs>
     </CustomBuild>
     <CustomBuild Include="Release\Surza.rtb">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
 if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
+if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Creating Surza Boot Diskette</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">Creating Surza Boot Diskette</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(OutDir)\BootDisk.txt;%(Outputs)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">$(OutDir)\BootDisk.txt;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
       </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">
+      </Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">custom build</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">custom build</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+      </Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">
       </Outputs>
     </CustomBuild>
     <CustomBuild Include="Debug\Monitor.loc">
