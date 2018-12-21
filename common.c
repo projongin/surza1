@@ -171,7 +171,7 @@ void common_init() {
 
 //----------------------------------------------------------
 
-bool allow_update;
+static volatile bool allow_update;
 
 void wdt_init() {
 	allow_update = true;
@@ -190,9 +190,7 @@ inline void wdt_update() {
 
 void reboot() {
 	allow_update = false;
-#ifndef WDT_EN
-	RTOut(0x20C, 0x01);
-#endif
+	RTOut(0x20C, 0x01); //принудительно включить собаку
 	while (true);
 }
 

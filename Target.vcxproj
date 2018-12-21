@@ -165,7 +165,7 @@
     </CustomBuild>
     <CustomBuild Include="Debug\Monitor.rtb">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" F: 
 if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
 if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
@@ -176,7 +176,7 @@ if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
     </CustomBuild>
     <CustomBuild Include="Release\Surza.rtb">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" F: 
 if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release_old_rtos|Win32'">"$(RTTarget)\Bin\BootDisk" /y "%(FullPath)" E: 
 if not errorlevel 1 echo New boot disk &gt; "$(OutDir)BootDisk.txt" </Command>

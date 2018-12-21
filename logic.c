@@ -6,6 +6,7 @@
 #include <float.h>
 
 #include <Rtk32.h>
+#include "Clock.h"
 
 #include "global_defines.h"
 
@@ -286,6 +287,7 @@ static bool init_fiu();
 static bool init_params();
 static bool init_journal();
 static bool init_oscilloscope();
+static bool init_set_inputs();
 
 
 int logic_init() {
@@ -347,9 +349,15 @@ int logic_init() {
 				LOG_AND_SCREEN("OSCILLOSCOPE init failed!");
 				break;
 			}
-
 			
 		    DEBUG_ADD_POINT(308);
+
+			if (!init_set_inputs()) {
+				LOG_AND_SCREEN("SET_INPUTS init failed!");
+				break;
+			}
+
+			DEBUG_ADD_POINT(309);
 
 			//дельта опционально
             #ifdef DELTA_HMI_ENABLE
@@ -357,10 +365,7 @@ int logic_init() {
 			delta_hmi_open(delta_HMI_set_regs);
             #endif
 			
-			DEBUG_ADD_POINT(309);
-
-
-			//DEBUG_ADD_POINT(310);
+		    DEBUG_ADD_POINT(310);
 
 			ok = true;
 			break;
@@ -3643,6 +3648,161 @@ void osc_test_func() {
 }
 
 
+//------------------------------------------------------------------------
+//  ”даленна€ установка входов ћяƒ
+//------------------------------------------------------------------------
+
+static float*   set_inputs_data_f;
+static int32_t* set_inputs_data_i;
+static uint8_t* set_inputs_data_b;
+
+static uint8_t* set_inputs_update_f;
+static uint8_t* set_inputs_update_i;
+static uint8_t* set_inputs_update_b;
+
+static volatile int set_inputs_new_data_flag;
+
+//задержка, если новое сообщение пытаетс€ записать новые данные, а старые еще не обработаны в прерывании
+//жду как минимум один такт сурзы , чтоб не тер€ть данные (мен€ть их сразу нельз€, так как они могут начать обновл€тьс€ в прерывании в любой момент)
+static RTKDuration set_inputs_delay;
+
+void set_inputs_net_callback(net_msg_t* msg, uint64_t channel);
+
+
+
+static bool init_set_inputs() {
+
+	atom_set_state(&set_inputs_new_data_flag, 0);
+
+	//выделение пам€ти дл€ хранени€ записываемых значений и флагов обновлени€
+	set_inputs_data_f = (float*)malloc(math_real_in_num * 4);
+	set_inputs_data_i = (int32_t*)malloc(math_int_in_num * 4);
+	set_inputs_data_b = (uint8_t*)malloc(math_bool_in_num);
+
+	set_inputs_update_f = (uint8_t*)malloc(math_real_in_num);
+	set_inputs_update_i = (uint8_t*)malloc(math_int_in_num);
+	set_inputs_update_b = (uint8_t*)malloc(math_bool_in_num);
+
+	if (set_inputs_data_f == NULL || set_inputs_data_i == NULL || set_inputs_data_b == NULL
+		|| set_inputs_update_f == NULL || set_inputs_update_i == NULL || set_inputs_update_b == NULL) {
+		if (set_inputs_data_f) free(set_inputs_data_f);
+		if (set_inputs_data_i) free(set_inputs_data_i);
+		if (set_inputs_data_b) free(set_inputs_data_b);
+		if (set_inputs_update_f) free(set_inputs_update_f);
+		if (set_inputs_update_i) free(set_inputs_update_i);
+		if (set_inputs_update_b) free(set_inputs_update_b);
+		return false;
+	}
+
+	memset(set_inputs_update_f, 0, math_real_in_num);
+	memset(set_inputs_update_i, 0, math_int_in_num);
+	memset(set_inputs_update_b, 0, math_bool_in_num);
+
+
+	set_inputs_delay = CLKMicroSecsToTicks((int)SurzaPeriod()*2);
+	if (set_inputs_delay == 0)
+		set_inputs_delay = 1;
+
+	net_add_dispatcher((uint8_t)NET_MSG_SET_INPUT, set_inputs_net_callback);
+
+	return true;
+}
+
+
+void set_inputs_net_callback(net_msg_t* msg, uint64_t channel) {
+
+	if (msg->size < sizeof(msg_type_set_input_t))
+		return;
+
+	msg_type_set_input_t* i_msg = (msg_type_set_input_t*)&msg->data[0];
+
+	if (msg->size < sizeof(msg_type_set_input_t) + i_msg->num * sizeof(input_value_t))
+		return;
+
+	if (i_msg->num == 0)
+		return;
+
+	if (memcmp(i_msg->hash, settings_header->hash, 16))
+		return;
+
+
+	if (atom_get_state(&set_inputs_new_data_flag)) {
+		//подождать как минимум один такт сурзы
+		RTKDelay(set_inputs_delay);
+
+		if (atom_get_state(&set_inputs_new_data_flag))
+			return;
+	}
+
+	input_value_t* val = (input_value_t*)(i_msg + 1);
+
+	for (unsigned i = i_msg->num; i != 0; i--, val++) {
+
+		unsigned index = val->index;
+
+		switch (val->type) {
+		case SURZA_INPUT_TYPE_FLOAT:
+			if (index < math_real_in_num) {
+				global_spinlock_lock();
+				if (_finite(val->val.f)) {
+					set_inputs_data_f[index] = val->val.f;
+					set_inputs_update_f[index] = 1;
+				}
+			    global_spinlock_unlock();
+			}
+			break;
+		case SURZA_INPUT_TYPE_INT32:
+			if (index < math_int_in_num) {
+				set_inputs_data_i[index] = val->val.i;
+				set_inputs_update_i[index] = 1;
+			}
+			break;
+		case SURZA_INPUT_TYPE_BOOL:
+			if (index < math_bool_in_num) {
+				set_inputs_data_b[index] = val->val.b ? true : false;
+				set_inputs_update_b[index] = 1;
+			}
+			break;
+		default: return;
+		}
+
+
+	}
+
+	
+    atom_set_state(&set_inputs_new_data_flag, 1);
+
+}
+
+
+void set_inputs() {
+
+	if (atom_get_state(&set_inputs_new_data_flag) == 0)
+		return;
+
+	for (unsigned i = 0; i < math_real_in_num; i++)
+		if (set_inputs_update_f[i]) {
+			set_inputs_update_f[i] = 0;
+			math_real_in[i] = set_inputs_data_f[i];
+		}
+
+	for (unsigned i = 0; i < math_int_in_num; i++)
+		if (set_inputs_update_i[i]) {
+			set_inputs_update_i[i] = 0;
+			math_int_in[i] = set_inputs_data_i[i];
+		}
+
+	for (unsigned i = 0; i < math_bool_in_num; i++)
+		if (set_inputs_update_b[i]) {
+			set_inputs_update_b[i] = 0;
+			math_bool_in[i] = set_inputs_data_b[i];
+		}
+
+	atom_set_state(&set_inputs_new_data_flag, 0);
+
+}
+
+
 
 //------------------------------------------------------------------------
 #ifdef DELTA_HMI_ENABLE
@@ -3982,10 +4142,14 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	dic_read();
 
-	// ====== вызов ћяƒа  ==================
 	DEBUG_ADD_POINT(22);
-    MYD_step();
+
+	set_inputs();
+
+	// ====== вызов ћяƒа  ==================
 	DEBUG_ADD_POINT(23);
+    MYD_step();
+	DEBUG_ADD_POINT(24);
 	// =====================================
 
 	#if 0
@@ -4044,25 +4208,25 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	/********************************************/
 #endif
 
-	DEBUG_ADD_POINT(24);
+	DEBUG_ADD_POINT(25);
 	dic_write();
 
-	DEBUG_ADD_POINT(25);
+	DEBUG_ADD_POINT(26);
 	fiu_write();
 
-	DEBUG_ADD_POINT(26);
+	DEBUG_ADD_POINT(27);
 	indi_copy();
 
-	DEBUG_ADD_POINT(27);
+	DEBUG_ADD_POINT(28);
 	params_update();
 
-	DEBUG_ADD_POINT(28);
+	DEBUG_ADD_POINT(29);
 	journal_add();
 
-	DEBUG_ADD_POINT(29);
+	DEBUG_ADD_POINT(35);
 	oscilloscope_add();
 
-	DEBUG_ADD_POINT(35);
+	DEBUG_ADD_POINT(36);
 
 	/***************/
 	//¬–≈ћ≈ЌЌќ !!!  чтение измерител€ шага , пока нет сделано это через конфигурацию

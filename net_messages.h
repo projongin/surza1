@@ -20,6 +20,8 @@ enum GateMessageType{
 	NET_MSG_JOURNAL_INFO,
 	NET_MSG_JOURNAL_REQUEST,
 	NET_MSG_OSCILLOSCOPE,
+	NET_MSG_SET_INPUT,
+	NET_GATE_MSG_IEC60870_DATA,
 
 	NET_MSG_VYBORG_INFO = 40
 };
@@ -189,6 +191,31 @@ typedef struct {
 //-------------------------------------------------------------------
 
 
+
+// set surza input data
+
+#define SURZA_INPUT_TYPE_FLOAT    0
+#define SURZA_INPUT_TYPE_INT32    1
+#define SURZA_INPUT_TYPE_BOOL     2
+
+typedef struct {
+	uint32_t type;   // SURZA_INPUT_TYPE
+	uint32_t index;  // input index
+	union {
+		float    f;
+		int32_t  i;
+		uint32_t b;
+	} val;
+} input_value_t;
+
+typedef struct {
+	uint8_t  hash[16]; //config id
+	uint32_t num;
+	uint8_t  reserv[16];
+	//input_value_t values[num];
+} msg_type_set_input_t;
+
+//----------------------------------
 
 
 
