@@ -1,6 +1,7 @@
 #include <Rtk32.h>
 #include <Rtkflt.h> 
 
+#include <stdlib.h>
 
 #include "ai8s.h"
 #include "log.h"
@@ -56,12 +57,19 @@ static AI8S_CONTROL_REG_t ctrl;
 
 logic_adc_handler logic_handler;
 
+static void* FPUContext;
+
 
 int RTKAPI AI8S_irq_handler(void* P) {
+
+	_rtkFLTSave(FPUContext);
+
 	if (logic_handler)
 		logic_handler();
 	else
 		(void)ai8s_read_ch(0, 7);
+
+	_rtkFLTRestore(FPUContext);
 
 	//оповещение контроллера прерываний о конце обработки
 	RTKIRQEnd(AI8S_IRQ);
@@ -108,6 +116,7 @@ bool InitAI8S(unsigned adc_num, unsigned adc1_adr, unsigned adc2_adr, unsigned p
 		RTOut(adc2_adr + AI8S_FIFO_CONTROL_REG, 0x10);
 
 
+	FPUContext = calloc(_rtkFLTDataSize(), 1);
 
 	//настройка обработчика прерывания
 	logic_handler = handler;
@@ -116,7 +125,6 @@ bool InitAI8S(unsigned adc_num, unsigned adc1_adr, unsigned adc2_adr, unsigned p
 	//делаю прерывание AI8S самым приоритетным
 	RTKIRQTopPriority(AI8S_IRQ, 8);
 	RTKSetIRQStack(AI8S_IRQ, 65536);
-
 
 
 	//контрольные регистры плат

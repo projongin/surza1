@@ -142,7 +142,7 @@
       <OutputFile>.\Debug\Surza.exe</OutputFile>
       <AdditionalLibraryDirectories>$(RTTarget)\Libmsvc;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions> /FIXED:NO</AdditionalOptions>
-      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32.lib;Flt387.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreAllDefaultLibraries>
       </IgnoreAllDefaultLibraries>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
@@ -151,6 +151,7 @@
       <ShowProgress>NotSet</ShowProgress>
       <LinkErrorReporting>NoErrorReport</LinkErrorReporting>
       <SubSystem>Console</SubSystem>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug_old_rtos|Win32'">
@@ -196,7 +197,7 @@
       <OutputFile>.\Debug\Surza.exe</OutputFile>
       <AdditionalLibraryDirectories>$(RTTarget)\Libmsvc;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions> /FIXED:NO</AdditionalOptions>
-      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32.lib;Flt387.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreAllDefaultLibraries>
       </IgnoreAllDefaultLibraries>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
@@ -237,6 +238,7 @@
       <EnableEnhancedInstructionSet>NoExtensions</EnableEnhancedInstructionSet>
       <ExceptionHandling>false</ExceptionHandling>
       <CompileAs>CompileAsC</CompileAs>
+      <AssemblerOutput>AssemblyCode</AssemblerOutput>
     </ClCompile>
     <Midl>
       <TypeLibraryName>.\Release\Surza.tlb</TypeLibraryName>
@@ -251,7 +253,7 @@
       <OutputFile>.\Release\Surza.exe</OutputFile>
       <AdditionalLibraryDirectories>$(RTTarget)\Libmsvc;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions> /FIXED:NO</AdditionalOptions>
-      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32s.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32s.lib;Flt387.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
@@ -262,6 +264,7 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <LinkErrorReporting>NoErrorReport</LinkErrorReporting>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <ProjectReference>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
@@ -312,7 +315,7 @@
       <OutputFile>.\Release\Surza.exe</OutputFile>
       <AdditionalLibraryDirectories>$(RTTarget)\Libmsvc;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions> /FIXED:NO</AdditionalOptions>
-      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32s.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>rtip.lib;RtfilesX.lib;Rtfsk32.lib;rtk32s.lib;Flt387.lib;drvrt32.lib;rtt32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
