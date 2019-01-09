@@ -1055,7 +1055,7 @@ static bool init_dic() {
 
 	//все выходы заранее в отключенное состояние
 	for(int i=0; i<12; i++)
-		RTOut(dic_adr+dic_adr_regs[i], 0);
+		RTOut(dic_adr+dic_adr_regs[i], 0xff);
 
 	//конфигурирование на вход\выход
 	uint8_t mask;
@@ -1090,7 +1090,7 @@ static bool init_dic() {
 
 	//все выходы заранее в отключенное состояние (второй раз на всяк случай)
 	for (int i = 0; i<12; i++)
-		RTOut(dic_adr + dic_adr_regs[i], 0);
+		RTOut(dic_adr + dic_adr_regs[i], 0xff);
 	
 
 	//установка аппаратного антидребезга
