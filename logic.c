@@ -1814,9 +1814,10 @@ typedef struct {
 static unsigned journal_event_size;   //размер всей структуры journal_event_t, вычисляемый на этапе инициализации журнала
 
 uint8_t* journal_events;              //кольцевой массив сохраненных событий
-int journal_events_num;               //максимальное кол-во событий для сохранения в кольцевом массиве
-volatile int journal_events_head;     //указатель на запись в массив. Всегда указывает на последнее добавленное событие. Исключение: При head==tail записей нет.
-volatile int journal_events_tail;     //указатель на чтение из массива. Всегда указывает на событие, находящееся в массиве дольше всего. Исключение: При head==tail записей нет.
+int journal_events_num_max;           //максимальное кол-во событий для сохранения в кольцевом массиве
+volatile int journal_events_num;      //текущее кол-во событий в очереди
+volatile int journal_events_head;     //указатель на запись в массив. Всегда указывает на последнее добавленное событие (при journal_events_num!=0)
+volatile int journal_events_tail;     //указатель на чтение из массива. Всегда указывает на событие, находящееся в массиве дольше всего (при journal_events_num!=0)
 
 //смещение в байтах до полей с данными события от начала  структуры journal_event_t
 static unsigned journal_event_offset_result;
@@ -2125,7 +2126,8 @@ static bool init_journal() {
 		LOG_AND_SCREEN("JOURNAL init error! (alloc journal_events)");
 		return false;
 	}
-	journal_events_num = EVENTS_BUF_SIZE;
+	journal_events_num_max = EVENTS_BUF_SIZE;
+	journal_events_num = 0;
 	journal_events_head = 0;
 	journal_events_tail = 0;
 
@@ -2272,29 +2274,20 @@ static void journal_add() {
 	DEBUG_ADD_POINT(31);
 
 	//добавление состояния событий в очередь
-	int n = journal_events_head;
-	if (journal_events_head == journal_events_tail) {
-		//нет записей в кольцевом буфере
-		n = journal_events_head;
-		journal_events_head++;
-		if (journal_events_head == journal_events_num)
-			journal_events_head = 0;
-	}
-	else {
-		journal_events_head++;
-		if (journal_events_head == journal_events_num)
-			journal_events_head = 0;
-		if (journal_events_head == journal_events_tail) {
-			journal_events_head = n;   //очередь полностью забита. добавлять некуда. возвращаем указатель бошки на прошлую позицию и уходим отсюда нафиг
-			return;
-		}
-		n = journal_events_head;
-	}
+
+	if (journal_events_num == journal_events_num_max) //очередь полностью забита. добавлять некуда. возвращаем указатель бошки на прошлую позицию и уходим отсюда нафиг
+		return;
+
+	journal_events_head++;
+	if (journal_events_head == journal_events_num_max)
+		journal_events_head = 0;
+
+	journal_events_num++;
 
 	DEBUG_ADD_POINT(32);
 
 	//заполнение структуры события
-	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size*n);
+	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size*journal_events_head);
 	p->unique_id = journal_event_unique_id++;
 	p->time = get_time();
 
@@ -2445,9 +2438,11 @@ void journal_update() {
 	if (net_connections() == 0)
 		return;
 
-	int head = atom_get_state(&journal_events_head);
-	int tail = atom_get_state(&journal_events_tail);
-	unsigned ev_num = (tail <= head) ? (head - tail) : (journal_events_num - tail + head);
+	global_spinlock_lock();
+	int head = journal_events_head;
+	int tail = journal_events_tail;
+	unsigned ev_num = (unsigned) journal_events_num;
+	global_spinlock_unlock();
 	
 	if (update) {
 		DEBUG_ADD_POINT(205);
@@ -2496,26 +2491,25 @@ void journal_update() {
 			last_sent_index = tail;
 
 		int index = last_sent_index + 1;
-		if (index == journal_events_num)
+		if (index == journal_events_num_max)
 			index = 0;	
 
 		net_msg_t* msg = net_get_msg_buf(journal_msg_size);
-		if (msg) {
-			DEBUG_ADD_POINT(210);
+		if (!msg)
+			break;
 
-			journal_fill_msg(msg, index);
+		DEBUG_ADD_POINT(210);
 
-			//попытка отправить
-			if (NET_ERR_NO_ERROR != net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL))
-				break;
-			else {  //отправилось сообщение,  инкремент указателя на следующее для отправки
-				last_sent_index = index;
-			}
+		journal_fill_msg(msg, index);
 
-			DEBUG_ADD_POINT(211);
-
+		//попытка отправить
+		if (NET_ERR_NO_ERROR != net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL))
+			break;
+		else {  //отправилось сообщение,  инкремент указателя на следующее для отправки
+			last_sent_index = index;
 		}
-		else break;
+
+		DEBUG_ADD_POINT(211);
 
 	}
 	
@@ -2531,9 +2525,11 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 	msg_type_journal_request_t* request = (msg_type_journal_request_t*)&msg->data[0];
 
-	int head = atom_get_state(&journal_events_head);
-	int tail = atom_get_state(&journal_events_tail);
-	unsigned ev_num = (tail <= head) ? (head - tail) : (journal_events_num - tail + head);
+	global_spinlock_lock();
+	int head = journal_events_head;
+	int tail = journal_events_tail;
+	unsigned ev_num = (unsigned) journal_events_num;
+	global_spinlock_unlock();
 
 	if (!ev_num)
 		return;
@@ -2551,15 +2547,15 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 	//поиск требуемого события
 	int index = tail;
-	while (index != tail) {  //поиск требуемого события
+	while(index != head){  //поиск требуемого события
 		p = (journal_event_t*)(journal_events + journal_event_size * index);
 		if (p->unique_id == request->event_id)
 			break;
 		index++;
-		if (index == journal_events_num)
+		if (index == journal_events_num_max)
 			index = 0;
 	}
-	if (index == tail)  //не найден по какой-то причине
+	if (index == head && p->unique_id != request->event_id)  //не найден по какой-то причине
 		return;
 
 	DEBUG_ADD_POINT(215);
@@ -2591,11 +2587,17 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 		DEBUG_ADD_POINT(219);
 
 		//удаляем все события до найденого, включая и его тоже
-		index++;
-		if (index == journal_events_num)
-			index = 0;
+		int new_tail = index+1;
+		if (new_tail == journal_events_num_max)
+			new_tail = 0;
 
-		atom_set_state(&journal_events_tail, index);
+		global_spinlock_lock();
+		journal_events_tail = new_tail;
+		if (index == head)
+			journal_events_num = 0; //удалили последний
+		else
+			journal_events_num = (head >= new_tail) ? head - new_tail + 1 : journal_events_num_max - new_tail + head + 1;
+		global_spinlock_unlock();
 
 		return;
 	}
