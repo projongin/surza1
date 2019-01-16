@@ -754,6 +754,11 @@ typedef struct {
 
 	uint32_t       label;                   //текущая метка границ сообщения (задается на канал, чтоб не использовать в каждом потоке потоконебезопасную rand())
 
+	uint64_t       loopback_sent;           //счетчик отправленных loopback сообщений
+	uint64_t       loopback_received;       //счетчик принятых loopback сообщений
+
+	bool           drop_connection_flag;    //флаг для потоков чтения/записи о необходимости завершиться
+
 } net_thread_state_t;
 
 static net_thread_state_t net_thread_state[NET_MAX_CONNECTIONS_ALLOWED];
@@ -915,6 +920,10 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 
 		conn_data->channel = conn_data->label;
 
+		conn_data->loopback_sent = 0;
+		conn_data->loopback_received = 0;
+
+		conn_data->drop_connection_flag = false;
 	}
 	
 	DEBUG_ADD_POINT(147);
@@ -1293,7 +1302,8 @@ void net_reader_thread_func(void* params) {
 		}
 
 
-		if (atom_get_state(&data->thread_cnt_atomic) < 2)
+		if (atom_get_state(&data->thread_cnt_atomic) < 2
+			|| data->drop_connection_flag)
 			exit = true;
 
 	}
@@ -1346,7 +1356,7 @@ void net_writer_thread_func(void* params) {
 			res = RTKGetTimed(data->write_mailbox, &buf, CLKMilliSecsToTicks(1000));
 			if (res==FALSE)
 				break;
-			if (res==TRUE && buf == NULL) {
+			if (res==TRUE && buf == NULL && data->drop_connection_flag) {
 				exit = true;
 				break;
 			}
@@ -1505,6 +1515,11 @@ static void RTKAPI net_tcp_server_func(void* param){
 
 			//установка счетчиков потоков сразу, чтоб net_connection_control_func() не посчитала соединение завершенным (так как сокет будет !=INVALID_SOCKET и thread_cnt_atomic==0 )
 			atom_set_state(&thread_data->thread_cnt_atomic, 2);
+
+			thread_data->loopback_sent = 0;
+			thread_data->loopback_received = 0;
+			thread_data->drop_connection_flag = false;
+
 			
 			thread_data->sock = accept(serv_socket, (struct sockaddr*)&remote, &remote_len);
 			if (thread_data->sock == INVALID_SOCKET) {
@@ -1583,6 +1598,17 @@ static void RTKAPI net_tcp_server_func(void* param){
 
 
 void net_connection_control_func() {
+
+	//формирование флага loopbacks_update для работы с loopback сообщениями
+	static int last_time = 0;
+	int new_time = steady_clock_get();
+	bool loopbacks_update = false;
+
+	if (steady_clock_expired(last_time, new_time, 1000000)) {
+		last_time = new_time;
+		loopbacks_update = true;
+	}
+
 	DEBUG_ADD_POINT(179);
 
 	//проверка состояния читающих\записывающих потоков
@@ -1630,12 +1656,33 @@ void net_connection_control_func() {
 					closesocket(data->sock);
 					data->sock = INVALID_SOCKET;
 
-					DEBUG_ADD_POINT(183);
+				}
+				else {
+					//послать loopback сообщение
+					if (loopbacks_update) {
+
+						DEBUG_ADD_POINT(183);
+
+						net_msg_t* msg = net_get_msg_buf(0);
+						msg->type = (uint8_t)GATE_SPECIAL_MSG_TYPE_LOOPBACK;
+						msg->subtype = 0;
+						if (net_send_msg(msg, NET_PRIORITY_HIGHEST, data->channel) == NET_ERR_NO_ERROR)
+							data->loopback_sent++;
+						
+						if (data->loopback_sent - data->loopback_received > NET_MAX_LOOPBACK_DELAY_SEC) {
+							//разорвать соединение
+							data->drop_connection_flag = true;
+						}
+
+					}
+
 				}
 
 			}
 
 }
+
+
 
 void net_read_recv_queues() {
 	DEBUG_ADD_POINT(184);
@@ -1657,6 +1704,8 @@ void net_read_recv_queues() {
 					//проверка на сообщения специального типа
 					if (msg->type <= (uint8_t)NET_SPECIAL_MSG_TYPE_MAX_NUM) {
 
+						DEBUG_ADD_POINT(186);
+
 						if (msg->type == (uint8_t)NET_SPECIAL_MSG_TYPE_CHANNEL_PRIORITY) {
 							if (msg->subtype == 0) {
 								RTKSetPriority(data->writer_handle, NET_TCP_WRITER_PRIORITY_HIGH);
@@ -1669,7 +1718,9 @@ void net_read_recv_queues() {
 								
 						}
 
-						DEBUG_ADD_POINT(186);
+						if (msg->type == (uint8_t)NET_SPECIAL_MSG_TYPE_LOOPBACK) {
+							data->loopback_received++;
+						}
 
 						net_free_net_buf(net_buf);
 

@@ -26,8 +26,10 @@
 
 
 //номер канала для отправки всем подключенным клиентам
-#define NET_BROADCAST_CHANNEL          UINT64_MAX
+#define  NET_BROADCAST_CHANNEL          UINT64_MAX
 
+//количество секунд, при котором соединение будет разорвано, если клиент не отвечает на loopback сообщения
+#define  NET_MAX_LOOPBACK_DELAY_SEC     10
 
 
 typedef enum {

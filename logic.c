@@ -190,7 +190,7 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 	}
 
 
-	//заполняю сообщение им отправляю
+	//заполняю сообщение и отправляю
 
 	unsigned size = sizeof(msg_type_settings_t) + s_header->size;
 
@@ -774,7 +774,7 @@ void indi_send() {
 
 			DEBUG_ADD_POINT(203);
 
-			net_send_msg(msg, NET_PRIORITY_HIGH, NET_BROADCAST_CHANNEL);
+			net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL);
 			state = 0;
 		}
 
@@ -2277,12 +2277,18 @@ static void journal_add() {
 
 	if (journal_events_num == journal_events_num_max) //очередь полностью забита. добавлять некуда. возвращаем указатель бошки на прошлую позицию и уходим отсюда нафиг
 		return;
-
+	
 	journal_events_head++;
 	if (journal_events_head == journal_events_num_max)
 		journal_events_head = 0;
 
+	
 	journal_events_num++;
+
+	//подтянуть хвост  (подтягивание хвоста только при удалении события из очереди не сработает для первого добавленного)
+	if (journal_events_num == 1)
+		journal_events_tail = journal_events_head;
+	
 
 	DEBUG_ADD_POINT(32);
 
@@ -2293,7 +2299,7 @@ static void journal_add() {
 
 	//копирование состояний событий
 	memcpy((uint8_t*)p + journal_event_offset_result, events_result, events_num);
-
+	
 	DEBUG_ADD_POINT(33);
 
 	//копирование данных real
@@ -2470,7 +2476,6 @@ void journal_update() {
 		}
 	}
 
-
 	DEBUG_ADD_POINT(208);
 
 	//если есть новые неотправленные события, то отправляю их (но не более JOURNAL_MAX_MSGS_PER_CYCLE)
@@ -2507,6 +2512,8 @@ void journal_update() {
 			break;
 		else {  //отправилось сообщение,  инкремент указателя на следующее для отправки
 			last_sent_index = index;
+
+			LOG_AND_SCREEN("SEND #%llu", ((msg_type_journal_event_t*)(&msg->data[0]))->unique_id);
 		}
 
 		DEBUG_ADD_POINT(211);
@@ -2519,6 +2526,10 @@ void journal_update() {
 void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 	DEBUG_ADD_POINT(212);
+
+	/************/
+	LOG_AND_SCREEN("CALLBACK #%llu %s", ((msg_type_journal_request_t*)(&msg->data[0]))->event_id, ((msg_type_journal_request_t*)(&msg->data[0]))->request==MSG_JOURNAL_REQUEST_DELETE?"DEL":"");
+	/***********/
 
 	if (msg->size < sizeof(msg_type_journal_request_t))
 		return;
@@ -2555,7 +2566,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 		if (index == journal_events_num_max)
 			index = 0;
 	}
-	if (index == head && p->unique_id != request->event_id)  //не найден по какой-то причине
+	if (index == head && ((journal_event_t*)(journal_events + journal_event_size * index))->unique_id != request->event_id)  //не найден по какой-то причине
 		return;
 
 	DEBUG_ADD_POINT(215);
@@ -2577,7 +2588,9 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 		journal_fill_msg(msg, index);
 
-		net_send_msg(msg, NET_PRIORITY_MEDIUM, NET_BROADCAST_CHANNEL);
+		LOG_AND_SCREEN("SEND R #%llu", ((msg_type_journal_event_t*)(&msg->data[0]))->unique_id);
+
+		net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
 
 		return;
 	}
@@ -4205,10 +4218,25 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 		MATH_IO_BOOL_OUT[4] = 0;
 	else
 		MATH_IO_BOOL_OUT[4] = 1;
-		
-	
-	/********************************************/
 #endif
+
+	static bool ev1 = false;
+	static bool ev2 = false;
+	static bool ev3 = false;
+
+	static int cnt = 0;
+	cnt++;
+
+	if (cnt % 10000 == 0) ev1 = !ev1;
+	if (cnt % 20000 == 0) ev2 = !ev2;
+	if (cnt % 40000 == 0) ev3 = !ev3;
+	
+	MATH_IO_BOOL_OUT[11] = ev1;
+	MATH_IO_BOOL_OUT[12] = ev2;
+	MATH_IO_BOOL_OUT[13] = ev3;
+
+	/********************************************/
+
 
 	DEBUG_ADD_POINT(25);
 	dic_write();
