@@ -53,12 +53,12 @@
 ========================================================================================================
 */
 
-//номер протокола поверх IP для передачи данных в реальном времени (не должен совпадать с известными зарегистрированными)
-#define NET_REALTIME_IP_PROTOCOL_NUM   200
+//номер протокола поверх IP для передачи данных в реальном времени (не должен совпадать с известными зарегистрированными, задавать с сетевым порядком байт)
+#define NET_REALTIME_IP_PROTOCOL_NUM    0xFCFC
 
 
 //приоритет потока TCP сервера
-#define NET_TCP_SERVER_PRIORITY    (RTKConfig.MainPriority+5)
+#define NET_TCP_SERVER_PRIORITY         (RTKConfig.MainPriority+5)
 
 //приоритет записывающего потока
 #define NET_TCP_WRITER_PRIORITY_HIGH    (RTKConfig.MainPriority+4)
@@ -695,11 +695,10 @@ static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buf
 	DEBUG_ADD_POINT(140);
 
 	if(realtime_callback)
-	  if (*(word*)(data + 0x0C) == 0x0008 &&   //IP  
-		  data[0x17] == NET_REALTIME_IP_PROTOCOL_NUM) // свой протокол, не совпадающий с известными зарегистрированными
+	  if (*(word*)(data + 0x0C) == NET_REALTIME_IP_PROTOCOL_NUM ) // свой протокол, не совпадающий с известными зарегистрированными
 	  {
 		  DEBUG_ADD_POINT(141);
-		  int offset = 14 + (data[14] & 0xf) * 4;  //начало данных = смещение заголовка IP + размер самого заголовка IP
+		  int offset = 14;
 		  realtime_callback(data + offset, length - offset);  //за счет паддинга на мелких фреймах ethernet передаваемая длина может быть больше реального количества полезных байт
 		  return 0;
 	  }

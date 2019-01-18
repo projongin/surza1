@@ -2512,8 +2512,6 @@ void journal_update() {
 			break;
 		else {  //отправилось сообщение,  инкремент указателя на следующее для отправки
 			last_sent_index = index;
-
-			LOG_AND_SCREEN("SEND #%llu", ((msg_type_journal_event_t*)(&msg->data[0]))->unique_id);
 		}
 
 		DEBUG_ADD_POINT(211);
@@ -2526,10 +2524,6 @@ void journal_update() {
 void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 	DEBUG_ADD_POINT(212);
-
-	/************/
-	LOG_AND_SCREEN("CALLBACK #%llu %s", ((msg_type_journal_request_t*)(&msg->data[0]))->event_id, ((msg_type_journal_request_t*)(&msg->data[0]))->request==MSG_JOURNAL_REQUEST_DELETE?"DEL":"");
-	/***********/
 
 	if (msg->size < sizeof(msg_type_journal_request_t))
 		return;
@@ -2587,8 +2581,6 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 		DEBUG_ADD_POINT(216);
 
 		journal_fill_msg(msg, index);
-
-		LOG_AND_SCREEN("SEND R #%llu", ((msg_type_journal_event_t*)(&msg->data[0]))->unique_id);
 
 		net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
 
@@ -4166,77 +4158,6 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
     MYD_step();
 	DEBUG_ADD_POINT(24);
 	// =====================================
-
-	#if 0
-	static unsigned cnt = 0;
-	cnt++;
-	if (cnt % 4000 == 0) {
-		//for (unsigned i = 0; i < math_bool_out_num; i++)
-		unsigned n = cnt / 4000;
-		n = n % math_bool_out_num;
-		MATH_IO_BOOL_OUT[n] = MATH_IO_BOOL_OUT[n] ? 0 : 1;
-	}
-
-	if (cnt == 25000) {
-		*(int*)0x0 = 123;
-	}
-
-	#endif
-
-
-#if 0
-	/********************************************/
-	//ОТЛАДКА ЖУРНАЛА
-	static bool flag = true;
-
-	static float f[3] = { 0,0,0 };
-	static int i = 0;
-	static bool b[2] = { false , false };
-
-	f[0] += 0.1f;  f[1] += 0.2f;  f[2] += 0.3f;
-	i++;
-
-	if (i % 2) {
-		b[0] = !b[0];  b[1] = !b[1];
-	}
-
-
-	MATH_IO_REAL_OUT[2] = f[0];
-	MATH_IO_REAL_OUT[5] = f[1];
-	MATH_IO_REAL_OUT[6] = f[2];
-
-	MATH_IO_INT_OUT[2] = i;
-
-	MATH_IO_BOOL_OUT[3] = b[0];
-	MATH_IO_BOOL_OUT[0] = b[1];
-	
-
-
-	flag = !flag;
-
-	if (flag)
-		MATH_IO_BOOL_OUT[4] = 0;
-	else
-		MATH_IO_BOOL_OUT[4] = 1;
-#endif
-
-	static bool ev1 = false;
-	static bool ev2 = false;
-	static bool ev3 = false;
-
-	static int cnt = 0;
-	cnt++;
-
-	if (cnt % 10000 == 0) ev1 = !ev1;
-	if (cnt % 20000 == 0) ev2 = !ev2;
-	if (cnt % 40000 == 0) ev3 = !ev3;
-	
-	MATH_IO_BOOL_OUT[11] = ev1;
-	MATH_IO_BOOL_OUT[12] = ev2;
-	MATH_IO_BOOL_OUT[13] = ev3;
-
-	/********************************************/
-
 
 	DEBUG_ADD_POINT(25);
 	dic_write();

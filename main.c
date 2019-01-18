@@ -65,7 +65,16 @@ void tmp_net_callback(net_msg_t* msg, uint64_t channel) {
 //	net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
 }
 
-void tmp_net_realtime_callback(const void* data, int length) {}
+
+/***********************************************/
+volatile int tmp_realtime_callback_counter = 0;
+volatile int tmp_realtime_callback_print_flag = 0;
+
+void tmp_net_realtime_callback(const void* data, int length) {
+	atom_inc(&tmp_realtime_callback_counter);
+	atom_set_state(&tmp_realtime_callback_print_flag, 1);
+}
+/******************************************/
 
 //------------------
 
@@ -250,6 +259,14 @@ int  main(int argc, char * argv[])
             #endif
 
 
+
+
+			/*******************************/
+			if (atom_get_state(&tmp_realtime_callback_print_flag)) {
+				LOG_AND_SCREEN("realtime_callback_counter = %d", atom_get_state(&tmp_realtime_callback_counter));
+				atom_set_state(&tmp_realtime_callback_print_flag, 0);
+			}
+			/*********************************/
 
 #if 0
 			extern int test_time;
