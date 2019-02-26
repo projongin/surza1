@@ -28,7 +28,7 @@
 
 int RTKAPI keyboard_irq_handler(void* P) {
 
-	RTKIRQEnd(1);
+//	RTKIRQEnd(1);
 	return 0;
 }
 

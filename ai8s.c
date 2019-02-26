@@ -71,9 +71,6 @@ int RTKAPI AI8S_irq_handler(void* P) {
 
 	_rtkFLTRestore(FPUContext);
 
-	//оповещение контроллера прерываний о конце обработки
-	RTKIRQEnd(AI8S_IRQ);
-
 	return 0;
 }
 

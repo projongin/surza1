@@ -16,6 +16,7 @@
 #include "buf_pool.h"
 
 #include "common.h"
+#include "surza_time.h"
 #include "log.h"
 #include "param_tree.h"
 

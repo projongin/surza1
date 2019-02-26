@@ -364,6 +364,9 @@ int logic_init() {
 			delta_HMI_init_regs();
 			delta_hmi_open(delta_HMI_set_regs);
             #endif
+
+			//инициализация времени
+			time_init();
 			
 		    DEBUG_ADD_POINT(310);
 
@@ -751,7 +754,7 @@ void indi_send() {
 			indi_msg->out_int_offset = base_offset[4];
 			indi_msg->out_bool_offset = base_offset[5];
 
-			indi_msg->time = get_time();
+			indi_msg->time = time_get();
 			indi_msg->launch_num = launchnum_get();
 
 			//флаг необходимости заполнить данные
@@ -2295,7 +2298,7 @@ static void journal_add() {
 	//заполнение структуры события
 	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size*journal_events_head);
 	p->unique_id = journal_event_unique_id++;
-	p->time = get_time();
+	p->time = time_get();
 
 	//копирование состояний событий
 	memcpy((uint8_t*)p + journal_event_offset_result, events_result, events_num);
@@ -3138,7 +3141,7 @@ void oscilloscope_add() {
 				header->n_to_complete = osc_min_length;
 
 				header->first_trigger = header->num - 1;
-				header->time = get_time();
+				header->time = time_get();
 
 				state = OSC_ADD_STATE_HISTORY;
 			}
@@ -3189,7 +3192,7 @@ void oscilloscope_add() {
 				DEBUG_ADD_POINT(235);
 
 				header->first_trigger = header->num - 1;
-				header->time = get_time();
+				header->time = time_get();
 				state = OSC_ADD_STATE_HISTORY;
 			}
 			
@@ -4145,42 +4148,44 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	DEBUG_ADD_POINT(21);
 
-	steady_clock_update((int)SurzaPeriod());
+	time_isr_update();
+
+	DEBUG_ADD_POINT(22);
 
 	dic_read();
 
-	DEBUG_ADD_POINT(22);
+	DEBUG_ADD_POINT(23);
 
 	set_inputs();
 
 	// ====== вызов МЯДа  ==================
-	DEBUG_ADD_POINT(23);
-    MYD_step();
 	DEBUG_ADD_POINT(24);
+    MYD_step();
+	DEBUG_ADD_POINT(25);
 	// =====================================
 
-	DEBUG_ADD_POINT(25);
+	DEBUG_ADD_POINT(26);
 	dic_write();
 
-	DEBUG_ADD_POINT(26);
+	DEBUG_ADD_POINT(27);
 	fiu_write();
 
-	DEBUG_ADD_POINT(27);
+	DEBUG_ADD_POINT(28);
 	indi_copy();
 
-	DEBUG_ADD_POINT(28);
+	DEBUG_ADD_POINT(29);
 	params_update();
 
-	DEBUG_ADD_POINT(29);
+	DEBUG_ADD_POINT(35);
 	journal_add();
 
-	DEBUG_ADD_POINT(35);
+	DEBUG_ADD_POINT(36);
 	oscilloscope_add();
 
-	DEBUG_ADD_POINT(36);
+	DEBUG_ADD_POINT(37);
 
 	/***************/
-	//ВРЕМЕННО !!!  чтение измерителя шага , пока нет сделано это через конфигурацию
+	//ВРЕМЕННО !!!  чтение измерителя шага , пока не сделано это через конфигурацию
 	RTInW(0x440);
 	/***************/
 
