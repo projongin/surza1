@@ -16,7 +16,7 @@ void time_isr_update();
 
 void time_init();
 
-
+void time_cmos_update();
 
 
 //--------- steady clock -------------

@@ -85,6 +85,8 @@ RTFDevice RTFDeviceList[] = {
 		//RTSetFlags( RT_DBG_OUT_TO_HOST, 1 );
 		RTSetFlags(RT_DBG_OUT_NONE, 1);
 		RTSetFlags(RT_HEAP_MIN_BLOCK_SIZE_64, 1);  //линия кеша на lx800 32 байта, но пусть будет 64 на всяк случай
+		RTSetFlags(RT_CMOS_RTC_SYNCH, 0);
+		
 
 
 		RTCMOSExtendHeap();            // get as much memory as we can

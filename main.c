@@ -19,6 +19,7 @@
 #include "log.h"
 #include "common.h"
 #include "logic.h"
+#include "surza_time.h"
 
 #ifdef DELTA_HMI_ENABLE
 #include "delta_hmi.h"
@@ -232,6 +233,8 @@ int  main(int argc, char * argv[])
 	
 	while (true) {
 		WATCHDOG_UPDATE();
+
+		    time_cmos_update();
 
 			//============================================================================================================
 			// основной цикл работы
