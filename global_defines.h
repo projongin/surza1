@@ -3,7 +3,9 @@
 
 
 // разрешение работы собаки
+#ifndef MSVS_DEBUG
 #define WDT_EN
+#endif
 
 // глобальное разрешение распечатывать отладочную информацию в модулях
 #define  _ALLOW_DEBUG_PRINT

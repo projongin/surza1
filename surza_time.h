@@ -10,9 +10,9 @@
 //допускается вызов как в прерывании, так и в основной программе 
 surza_time_t  time_get();
 
-
 void time_isr_update();
 
+void time_net_callback(const void* data, int length);
 
 void time_init();
 

@@ -931,7 +931,7 @@ void adc_irq_handler(void){
 		}
 	}
 
-	 
+	
 	//обновление собаки
 	wdt_update();
 
@@ -4148,6 +4148,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	DEBUG_ADD_POINT(21);
 
+	//синхронизация времени
 	time_isr_update();
 
 	DEBUG_ADD_POINT(22);

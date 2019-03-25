@@ -67,6 +67,7 @@ void tmp_net_callback(net_msg_t* msg, uint64_t channel) {
 }
 
 
+#if 0
 /***********************************************/
 volatile int tmp_realtime_callback_counter = 0;
 volatile int tmp_realtime_callback_print_flag = 0;
@@ -76,6 +77,7 @@ void tmp_net_realtime_callback(const void* data, int length) {
 	atom_set_state(&tmp_realtime_callback_print_flag, 1);
 }
 /******************************************/
+#endif
 
 //------------------
 
@@ -165,7 +167,7 @@ int  main(int argc, char * argv[])
 	//========================================================================================
 	DEBUG_ADD_POINT(4);
 	if (init_flags.base_init) {
-		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, tmp_net_realtime_callback)) {
+		if (NET_ERR_NO_ERROR != net_init(tmp_net_callback, time_net_callback)) {
 			LOG_AND_SCREEN("net_init()  fail!");
 		}
 		else {
@@ -264,12 +266,22 @@ int  main(int argc, char * argv[])
 
 
 
+			/*************************/
+			surza_time_t ttt = time_get();
+			static surza_time_t ttt_prev;
+			if (ttt.secs != ttt_prev.secs) {
+				LOG_AND_SCREEN("UNIX TIME = %lld, nanos = %u", ttt.secs, ttt.nsecs);
+			}
+			ttt_prev = ttt;
+			/****************************/
+#if 0
 			/*******************************/
 			if (atom_get_state(&tmp_realtime_callback_print_flag)) {
 				LOG_AND_SCREEN("realtime_callback_counter = %d", atom_get_state(&tmp_realtime_callback_counter));
 				atom_set_state(&tmp_realtime_callback_print_flag, 0);
 			}
 			/*********************************/
+#endif
 
 #if 0
 			extern int test_time;
