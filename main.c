@@ -65,20 +65,6 @@ void tmp_net_callback(net_msg_t* msg, uint64_t channel) {
 //	LOG_AND_SCREEN("MSG channel=%016llX   type=%u, subtype=%u,  data_size=%u bytes", channel, msg->type, msg->subtype, msg->size);
 //	net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
 }
-
-
-#if 0
-/***********************************************/
-volatile int tmp_realtime_callback_counter = 0;
-volatile int tmp_realtime_callback_print_flag = 0;
-
-void tmp_net_realtime_callback(const void* data, int length) {
-	atom_inc(&tmp_realtime_callback_counter);
-	atom_set_state(&tmp_realtime_callback_print_flag, 1);
-}
-/******************************************/
-#endif
-
 //------------------
 
 
@@ -266,74 +252,6 @@ int  main(int argc, char * argv[])
 
 
 
-			/*************************/
-			static unsigned static_sec_cnt = 0;
-			extern bool pps_block;
-
-          #if 0
-			surza_time_t ttt = time_get();
-			static surza_time_t ttt_prev;
-			if (ttt.secs != ttt_prev.secs) {
-				LOG_AND_SCREEN("UNIX TIME = %lld, nanos = %u", ttt.secs, ttt.nsecs);
-
-				static_sec_cnt++;
-				if (static_sec_cnt % 10 == 0)
-					pps_block = !pps_block;
-					
-			}
-			ttt_prev = ttt;
-           #endif
-			
-			extern uint64_t ddd_dif;
-			extern bool ddd_dif_new;
-			extern bool ddd_dif_update;
-			extern bool ddd_pps;
-			extern unsigned ddd_pps_period;
-			extern surza_time_t ddd_local;
-			extern surza_time_t ddd_sync;
-			extern bool ddd_new_msg;
-			extern uint64_t ddd_avg;
-			extern uint64_t ddd_msg_time;
-
-			if (ddd_pps) {
-				ddd_pps = false;
-				LOG_AND_SCREEN("PPS, period: %u", ddd_pps_period);
-			}
-
-			if (ddd_new_msg) {
-				ddd_new_msg = false;
-				LOG_AND_SCREEN("MSG,  time=%llu ms,  avg=%llu ms", ddd_msg_time / 1000000, ddd_avg / 1000000);
-			}
-
-			if (ddd_dif_new) {
-				ddd_dif_new = false;
-				LOG_AND_SCREEN("SYNC MSG,  DIF = %llu us", ddd_dif / 1000);
-			}
-			if (ddd_dif_update) {
-				ddd_dif_update = false;
-				LOG_AND_SCREEN("SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC");
-				LOG_AND_SCREEN("L: %lld,%u  S: %lld,%u", ddd_local.secs, ddd_local.nsecs, ddd_sync.secs, ddd_sync.nsecs);
-			}
-			/****************************/
-#if 0
-			/*******************************/
-			if (atom_get_state(&tmp_realtime_callback_print_flag)) {
-				LOG_AND_SCREEN("realtime_callback_counter = %d", atom_get_state(&tmp_realtime_callback_counter));
-				atom_set_state(&tmp_realtime_callback_print_flag, 0);
-			}
-			/*********************************/
-#endif
-
-#if 0
-			extern int test_time;
-			time = RTKGetTime();
-			if (CLKTicksToSeconds(time) != CLKTicksToSeconds(time_prev)) {
-				time_prev = time;
-
-				int t = test_time;
-				LOG_AND_SCREEN("clks = %u, %.3f us", t, t/500.0f);
-			}
-#endif
 
 #if 0
 		   extern volatile int net_test_heap_bufs;
