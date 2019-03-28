@@ -267,12 +267,53 @@ int  main(int argc, char * argv[])
 
 
 			/*************************/
+			static unsigned static_sec_cnt = 0;
+			extern bool pps_block;
+
+          #if 0
 			surza_time_t ttt = time_get();
 			static surza_time_t ttt_prev;
 			if (ttt.secs != ttt_prev.secs) {
 				LOG_AND_SCREEN("UNIX TIME = %lld, nanos = %u", ttt.secs, ttt.nsecs);
+
+				static_sec_cnt++;
+				if (static_sec_cnt % 10 == 0)
+					pps_block = !pps_block;
+					
 			}
 			ttt_prev = ttt;
+           #endif
+			
+			extern uint64_t ddd_dif;
+			extern bool ddd_dif_new;
+			extern bool ddd_dif_update;
+			extern bool ddd_pps;
+			extern unsigned ddd_pps_period;
+			extern surza_time_t ddd_local;
+			extern surza_time_t ddd_sync;
+			extern bool ddd_new_msg;
+			extern uint64_t ddd_avg;
+			extern uint64_t ddd_msg_time;
+
+			if (ddd_pps) {
+				ddd_pps = false;
+				LOG_AND_SCREEN("PPS, period: %u", ddd_pps_period);
+			}
+
+			if (ddd_new_msg) {
+				ddd_new_msg = false;
+				LOG_AND_SCREEN("MSG,  time=%llu ms,  avg=%llu ms", ddd_msg_time / 1000000, ddd_avg / 1000000);
+			}
+
+			if (ddd_dif_new) {
+				ddd_dif_new = false;
+				LOG_AND_SCREEN("SYNC MSG,  DIF = %llu us", ddd_dif / 1000);
+			}
+			if (ddd_dif_update) {
+				ddd_dif_update = false;
+				LOG_AND_SCREEN("SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  SYNC");
+				LOG_AND_SCREEN("L: %lld,%u  S: %lld,%u", ddd_local.secs, ddd_local.nsecs, ddd_sync.secs, ddd_sync.nsecs);
+			}
 			/****************************/
 #if 0
 			/*******************************/

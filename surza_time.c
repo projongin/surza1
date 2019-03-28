@@ -16,6 +16,8 @@ static unsigned period_ns;
 
 
 
+#define NSECS_BILLION   1000000000ull
+
 
 // ДОПУСКИ УХОДА ЧАСОВ  (в наносекундах)
 
@@ -25,6 +27,11 @@ static unsigned period_ns;
 //если ФИУ с PPS и сейчас режим с PPS - то корректировку нет смысла проводить при разбежке до 100 - 200 миллисекунд (в таком режиме секунда будет отсчитываться от сигнала PPS с точностью до такта сурзы)
 #define SYNC_PPS_MAX_DEVIATION      200000000
 
+//количество наносекунд со времени последней выполненной синхронизации через которое можно выполнить принудительную синхронизацию (только в режиме без PPS)
+#define SYNC_FORCED_NSECS           (NSECS_BILLION*1800)
+
+//минимальная разбежка для выполнения принудительной синхронизации
+#define SYNC_FORCED_DEVIATION       1500000
 
 
 #define PPS_DEFAULT_ADR  0x442
@@ -37,7 +44,6 @@ unsigned char get_pps() { return (RTIn(isa_pps_adr) == PPS_SIGNAL_CODE_PPS); }
 
 
 
-#define NSECS_BILLION   1000000000ull
 
 
 #if 0
@@ -166,17 +172,22 @@ void time_init() {
 		period_ns = period_us*1000;
 
 
+		hardware_pps_en = false;
 		item = ParamTree_Find(node, "PPS_ADR", PARAM_TREE_SEARCH_ITEM);
-		if (item && item->value)
-			sscanf_s(item->value, "%u", &isa_pps_adr);	
+		if (item && item->value) {
+			sscanf_s(item->value, "%u", &isa_pps_adr);
+			hardware_pps_en = true;
+		}
 
 	}
 		
 
 
 	//проверка наличия ФИУ с PPS и установка соответствующего флага
-	uint8_t u8 = RTIn(isa_pps_adr);
-	hardware_pps_en = (u8 == PPS_SIGNAL_CODE_PPS || u8 == PPS_SIGNAL_CODE_NO_PPS) ? true : false;
+	if (hardware_pps_en) {
+		uint8_t u8 = RTIn(isa_pps_adr);
+		hardware_pps_en = (u8 == PPS_SIGNAL_CODE_PPS || u8 == PPS_SIGNAL_CODE_NO_PPS) ? true : false;
+	}
 
 	//инициализация начального времени
 	current_time.steady_nsecs = 0;
@@ -199,6 +210,32 @@ void time_init() {
 	sync_time_update = false;
 }
 
+
+
+/*************/
+bool upd_f = false;
+surza_time_t ttt;
+
+uint64_t ddd_dif;
+bool ddd_dif_new = false;
+bool ddd_dif_update = false;
+bool ddd_pps = false;
+
+bool ddd_new_msg = false;
+uint64_t ddd_avg;
+uint64_t ddd_msg_time;
+
+surza_time_t ddd_local, ddd_sync;
+
+unsigned ddd_pps_period = 0;
+
+bool pps_block = false;
+
+void time_net_callback_(const void* data, int length) {
+	memcpy(&ttt, data, sizeof(surza_time_t));
+	upd_f = true;
+}
+/**************/
 
 
 //обновление внутренней временной метки
@@ -232,6 +269,12 @@ void time_isr_update() {
 		if (!pps_en) {	   //если режим без  PPS, то проверка на появление сигнала PPS, если появился, то переключение на режим работы по PPS
 			pps_state = get_pps();
 			pps_read = true;
+			/******************/
+			/*
+			if (pps_block)
+				pps_state = false;
+			*/
+			/******************/
 			if (pps_state)
 				pps_en = true;
 		}
@@ -244,7 +287,20 @@ void time_isr_update() {
 				pps_state = get_pps();
 
 
+			/*************/
+			/*
+			if (pps_block) {
+  			    pps_state = false;
+			}
+			*/
+			/************/
+
 			if (pps_state) {
+
+				/************/
+				ddd_pps_period = current_time.nsecs;
+				ddd_pps = true;
+				/************/
 
 				current_time.nsecs = 0;
 				current_time.secs++;
@@ -269,81 +325,6 @@ void time_isr_update() {
 	}
 
 
-
-#if 0
-
-    //если есть ФИУ с PPS
-	if(hardware_pps_en)	   //если режим без  PPS, то проверка на появление сигнала PPS, если появился, то переключение на режим работы по PPS, сохраненная секунда приравнивается текущей системной
-		if (!pps_en) {
-			pps_state = get_pps();
-			pps_read = true;
-			if (pps_state) {
-				pps_en = true;
-				saved_second = get_system_second();
-			}
-		}
-
-	/*
-	!!!!!!!!!!!
-	разобраться с алгоритмом с переделкой без системного времени.  посмотреть чем заменить get_system_second и все места где она используется
-
-	не забыть потом отлкючить отладку (пренести колбекс сеетвой в перрывание обратно из общего цикла)
-	!!!!!!!!!!
-	*/
-
-    //если есть ФИУ с PPS
-	if (hardware_pps_en) {
-
-		//если режим с PPS
-		if (pps_en) {
-
-			//если с последней секунды прошло полсекунды - сохраняю текущую системную секунду
-			if(current_time.nsecs > 500000000)
-				saved_second = get_system_second();
-
-			//считывание PPS, если уже не был считан ранее (при переходе из работы без PPS  в режим с PPS)
-			if (!pps_read)
-				pps_state = get_pps();
-
-			//если нет PPS и его нет уже 1.1 секунды, то поднимаю флаг отсутствия PPS и перехожу в режим работы  без PPS (по системным часам)
-			if (!pps_state && current_time.nsecs > NSECS_BILLION + 100000000) {
-				pps_en = false;
-				last_system_second = current_time.secs;
-			}
-
-			//если нет PPS, то функция инкремента наносекунд
-			if (!pps_state)
-				current_time.nsecs += period_ns;
-			else {
-				//если есть PPS, то зануление surza_time_t.nsec,  surza_time_t.sec равна сохраненной системной метке+1
-				current_time.nsecs = 0;
-				current_time.secs = saved_second + 1;
-			}
-
-		}
-
-	}
-
-
-	//считывание системного времени
-		int64_t system_second = get_system_second();
-
-		//если новая секунда, то зануление surza_time_t.nsec,  surza_time_t.sec  приравнивается считанной системной метке
-		if (system_second != last_system_second) {
-			current_time.nsecs = 0;
-			current_time.secs = system_second;
-		} else {
-			//если нет новой секунды, то инкремент наносекунд
-			current_time.nsecs += period_ns;
-		}
-	    
-
-		last_system_second = system_second;
-
-
-	}
-#endif
-
 }
 
 
@@ -353,7 +334,8 @@ void time_isr_update() {
 #define SYNC_STAT_HYSTORY  10
 
 //максимальное отклонение от среднего значения между поступлением сообщений синхронизации при котором сообщение будет считаться допустимым для синхронизации (в наносекундах)
-#define SYNC_TIME_MAX_DEVIATION  20000000
+// логично сделать его менее SYNC_NO_PPS_MAX_DEVIATION
+#define SYNC_TIME_MAX_DEVIATION  5000000
 
 
 static uint64_t msg_time_stat[SYNC_STAT_HYSTORY];
@@ -363,19 +345,11 @@ static uint64_t msg_time_sum = 0;
 
 static uint64_t last_time_sync;
 
+static uint64_t nsecs_since_sync = 0;
 
-/*************/
-bool upd_f = false;
-surza_time_t ttt;
-
-void time_net_callback(const void* data, int length) {
-	memcpy(&ttt, data, sizeof(surza_time_t));
-	upd_f = true;
-}
-/**************/
 
 //получение новых сообщений с метками времени
-void time_net_callback_(const void* data, int length) {
+void time_net_callback(const void* data, int length) {
 
 	if (length < sizeof(surza_time_t))
 		return;
@@ -407,13 +381,24 @@ void time_net_callback_(const void* data, int length) {
 	}
 
 	//проверка, что сообщение пришло без особых задержек (оно не сильно отличается от среднего интервала между сообщениями)
-	if (sync_once && (msg_time_stat_num==SYNC_STAT_HYSTORY)) {
+	if (sync_once) {
 
-		uint64_t average_time = msg_time_sum / SYNC_STAT_HYSTORY;
-
-		if ((average_time > msg_time && (average_time - msg_time > SYNC_TIME_MAX_DEVIATION))
-			|| (average_time < msg_time && (msg_time - average_time > SYNC_TIME_MAX_DEVIATION)))
+		if (msg_time_stat_num != SYNC_STAT_HYSTORY)  //не обновлять пока не накопится история длительностей между приходом синхронизирующих сообщений
 			return;
+		else {
+
+			uint64_t average_time = msg_time_sum / SYNC_STAT_HYSTORY;
+
+			/***************/
+			ddd_new_msg = true;
+			ddd_avg = average_time;
+			ddd_msg_time = msg_time;
+			/******************/
+
+			if ((average_time > msg_time && (average_time - msg_time > SYNC_TIME_MAX_DEVIATION))
+				|| (average_time < msg_time && (msg_time - average_time > SYNC_TIME_MAX_DEVIATION)))
+				return;
+		}
 	}
 	
 	
@@ -426,9 +411,8 @@ void time_net_callback_(const void* data, int length) {
 	/**********/
 	uint64_t ddd_l = local_time.secs * NSECS_BILLION + local_time.nsecs;
 	uint64_t ddd_s = sync_time->secs * NSECS_BILLION + sync_time->nsecs;
-	uint64_t ddd_dif = (ddd_l > ddd_s) ? ddd_l - ddd_s : ddd_s - ddd_l;
-
-	LOG_AND_SCREEN("SYNC MSG.  DIF = %llu us", ddd_dif / 1000);
+	ddd_dif = (ddd_l > ddd_s) ? ddd_l - ddd_s : ddd_s - ddd_l;
+	ddd_dif_new = true;
 	/**********/
 
 	if (local_time.secs != sync_time->secs) {
@@ -449,11 +433,15 @@ void time_net_callback_(const void* data, int length) {
 			sync_flag = true;
 
 	} else {
-		if ((local_time.nsecs > sync_time->nsecs && (local_time.nsecs - sync_time->nsecs > max_deviation))
-			|| (local_time.nsecs < sync_time->nsecs && (sync_time->nsecs - local_time.nsecs > max_deviation)))
+		uint32_t deviation = (local_time.nsecs > sync_time->nsecs) ? local_time.nsecs - sync_time->nsecs : sync_time->nsecs - local_time.nsecs;
+
+		//если разбежка вышла за допустимый диапазон или с последней синхронизации прошло достаточно времени для выполнения принудительной синхронизации
+		if (deviation > max_deviation 
+			|| (local_time.steady_nsecs-nsecs_since_sync>SYNC_FORCED_NSECS && deviation>SYNC_FORCED_DEVIATION && !pps_en))
 			sync_flag = true;
 	}
 
+	
 	if (sync_flag) {
 		unsigned ns = (sync_time->nsecs / period_ns + 1) * period_ns;
 		global_spinlock_lock();
@@ -461,11 +449,14 @@ void time_net_callback_(const void* data, int length) {
 		 sync_nsecs = ns;
 		 sync_time_update = true;
 		global_spinlock_unlock();
+		nsecs_since_sync = local_time.steady_nsecs;
 	}
 	
 	/*************/
 	if (sync_flag) {
-		LOG_AND_SCREEN("SYNC  SYNC  SYNC  SYNC  SYNC  SYNC  ");
+		ddd_dif_update = true;
+		ddd_local = local_time;
+		ddd_sync = *sync_time;
 	}
 	/**************/
 
