@@ -288,6 +288,8 @@ static bool init_params();
 static bool init_journal();
 static bool init_oscilloscope();
 static bool init_set_inputs();
+static bool init_steptime();
+static bool init_shu();
 
 
 int logic_init() {
@@ -369,6 +371,18 @@ int logic_init() {
 			time_init();
 			
 		    DEBUG_ADD_POINT(310);
+
+			//инициализация измерителя шага
+			if (!init_steptime()) {
+				LOG_AND_SCREEN("STEP_TIME init failed!");
+				break;
+			}
+
+			//инициализация ШУ
+			if (!init_shu()) {
+				LOG_AND_SCREEN("SHU init failed!");
+				break;
+			}
 
 			ok = true;
 			break;
@@ -3815,6 +3829,288 @@ void set_inputs() {
 
 
 //------------------------------------------------------------------------
+//  Измеритель шага
+//------------------------------------------------------------------------
+static bool steptime_init_ok = false;
+static unsigned steptime_adr;
+static unsigned steptime_input;
+static unsigned steptime_time;
+
+static bool init_steptime(){
+
+	steptime_init_ok = false;
+
+	steptime_time = 0;
+
+	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "TIME_CHECK", PARAM_TREE_SEARCH_NODE);
+	if (!node)   
+		return true;  //измеритель шага не используется
+
+
+	param_tree_node_t* item;
+
+	item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
+	if (item && item->value) {
+		sscanf_s(item->value, "%u", &steptime_adr);
+	}
+
+
+	item = ParamTree_Find(node, "input", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)  return false;
+	if (sscanf_s(item->value, "%u", &steptime_input) <= 0) return false;
+	if (steptime_input >= math_int_in_num) return false;
+
+	
+	steptime_init_ok = true;
+
+	return true;
+
+}
+
+//получение времени такта
+static void steptime_update() {
+
+	if (!steptime_init_ok)
+		return;
+
+
+	steptime_time = RTInW(0x440);
+	
+}
+
+//копирование времени такта в МЯД
+static void steptime_copy() {
+
+	if (!steptime_init_ok)
+		return;
+
+	unsigned steptime_us = steptime_time / 50;
+
+	MATH_IO_INT_IN[steptime_input] = steptime_us;
+
+}
+
+
+
+
+//------------------------------------------------------------------------
+//  Встроенный ШУ
+//------------------------------------------------------------------------
+static bool shu_init_ok = false;
+
+static unsigned shu_en[2];
+static unsigned shu_first_adr[2];
+static unsigned shu_status_num[2];
+static unsigned shu_status_adr[2];
+static unsigned shu_reset_adr[2];
+static unsigned shu_n_of_regs[2];
+static unsigned shu_first_input[2];
+static unsigned shu_reset_output[2];
+
+static unsigned shu_reg_counter[2];
+
+
+static bool init_shu() {
+
+	shu_init_ok = false;
+
+	shu_en[0] = false;
+	shu_en[1] = false;
+
+	shu_reg_counter[0] = 0;
+	shu_reg_counter[1] = 0;
+
+	param_tree_node_t* shu_node = ParamTree_Find(ParamTree_MainNode(), "SHU", PARAM_TREE_SEARCH_NODE);
+	if (!shu_node) {
+		return true;  //ШУ не используется
+	}
+
+
+	int shu_n = 0;
+	param_tree_node_t* node;
+	param_tree_node_t* item;
+
+	for (node = ParamTree_Child(shu_node); node; node = node->next, shu_n++) {
+
+		unsigned u32;
+
+		item = ParamTree_Find(node, "en", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			u32 = 0;
+			sscanf_s(item->value, "%u", &u32);
+		}
+		else
+			return false;
+
+		if (u32 != 1)
+			continue;
+
+
+		item = ParamTree_Find(node, "first_reg_adr", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			u32 = UINT_MAX;
+			sscanf_s(item->value, "%u", &u32);
+		}
+		else
+			return false;
+
+		if (u32 < UINT_MAX)
+			shu_first_adr[shu_n] = u32;
+
+
+		item = ParamTree_Find(node, "status_reg", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			u32 = UINT_MAX;
+			sscanf_s(item->value, "%u", &u32);
+		}
+		else
+			return false;
+
+		if (u32 < UINT_MAX)
+			shu_status_num[shu_n] = u32;
+
+
+		item = ParamTree_Find(node, "reset_reg_adr", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			u32 = UINT_MAX;
+			sscanf_s(item->value, "%u", &u32);
+		}
+		else
+			return false;
+
+		if (u32 < UINT_MAX)
+			shu_reset_adr[shu_n] = u32;
+
+
+
+		item = ParamTree_Find(node, "n_of_regs", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			u32 = UINT_MAX;
+			sscanf_s(item->value, "%u", &u32);
+		}
+		else
+			return false;
+
+		if (u32 < UINT_MAX)
+			shu_n_of_regs[shu_n] = u32;
+
+
+
+		item = ParamTree_Find(node, "first_input", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			u32 = UINT_MAX;
+			sscanf_s(item->value, "%u", &u32);
+		}
+		else
+			return false;
+
+		if (u32 < UINT_MAX)
+			shu_first_input[shu_n] = u32;
+
+
+		item = ParamTree_Find(node, "reset_output", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			u32 = UINT_MAX;
+			sscanf_s(item->value, "%u", &u32);
+		}
+		else
+			return false;
+
+		if (u32 < UINT_MAX)
+			shu_reset_output[shu_n] = u32;
+
+
+
+		//проверки
+
+		if (shu_status_num[shu_n] >= shu_n_of_regs[shu_n])
+			return false;
+
+		shu_status_adr[shu_n] = shu_status_num[shu_n] + shu_first_adr[shu_n];
+
+		if (shu_first_adr[shu_n] > 0xffff || shu_reset_adr[shu_n] > 0xffff || shu_status_adr[shu_n] > 0xffff)
+			return false;
+
+		if (shu_first_input[shu_n] >= math_bool_in_num
+			|| shu_reset_output[shu_n] >= math_bool_out_num
+			|| shu_first_input[shu_n]+shu_n_of_regs[shu_n]*8 > math_bool_in_num)
+			return false;
+
+
+		shu_en[shu_n] = true;
+		
+	}
+
+	shu_init_ok = true;
+
+	return true;
+
+}
+
+
+
+//получение информации ШУ
+static void shu_update() {
+
+	if (!shu_init_ok)
+		return;
+
+
+	uint8_t u8, mask;
+
+	for (unsigned i = 0; i < 2; i++) {
+
+		if (!shu_en[i])
+			continue;
+
+		//считывание очередного регистра
+		u8 = RTIn(shu_first_adr[i]+shu_reg_counter[i]);
+
+		boolean_T* ptr = &MATH_IO_BOOL_IN[shu_first_input[i] + shu_reg_counter[i] * 8];
+		for (mask = 0x01; mask; mask <<= 1, ptr++)
+			*ptr = (mask&u8?true:false);
+
+		shu_reg_counter[i]++;
+		if(shu_reg_counter[i]==shu_status_num[i])  //пропуск стастуного регистра
+			shu_reg_counter[i]++;
+		if (shu_reg_counter[i] >= shu_n_of_regs[i])
+			shu_reg_counter[i] = 0;
+
+
+		//считывание статусного регистра на каждом шаге
+		u8 = RTIn(shu_status_adr[i]);
+
+		ptr = &MATH_IO_BOOL_IN[shu_first_input[i] + shu_status_num[i] * 8];
+		for (mask = 0x01; mask; mask <<= 1, ptr++)
+			*ptr = (mask&u8 ? true : false);
+
+	}
+
+}
+
+
+static void shu_reset() {
+
+	if (!shu_init_ok)
+		return;
+
+	for (unsigned i = 0; i < 2; i++) {
+
+		if (!shu_en[i])
+			continue;
+
+		if (MATH_IO_BOOL_OUT[shu_reset_output[i]])
+			RTOutW(shu_reset_adr[i], 0x7A01);
+
+	}
+
+}
+
+
+
+
+
+//------------------------------------------------------------------------
 #ifdef DELTA_HMI_ENABLE
 
 #define DELTA_MAX_REGS_TO_SEND   80   //всегда должно быть кратно 2
@@ -4159,6 +4455,10 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	set_inputs();
 
+	steptime_copy();
+
+	shu_update();
+
 	// ====== вызов МЯДа  ==================
 	DEBUG_ADD_POINT(24);
     MYD_step();
@@ -4185,11 +4485,8 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	DEBUG_ADD_POINT(37);
 
-	/***************/
-	//ВРЕМЕННО !!!  чтение измерителя шага , пока не сделано это через конфигурацию
-	RTInW(0x440);
-	/***************/
+	shu_reset();
 
-
+	steptime_update();
 }
 
