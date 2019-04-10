@@ -3874,7 +3874,7 @@ static void steptime_update() {
 		return;
 
 
-	steptime_time = RTInW(0x440);
+	steptime_time = RTInW(steptime_adr);
 	
 }
 
@@ -3933,19 +3933,7 @@ static bool init_shu() {
 	for (node = ParamTree_Child(shu_node); node; node = node->next, shu_n++) {
 
 		unsigned u32;
-
-		item = ParamTree_Find(node, "en", PARAM_TREE_SEARCH_ITEM);
-		if (item && item->value) {
-			u32 = 0;
-			sscanf_s(item->value, "%u", &u32);
-		}
-		else
-			return false;
-
-		if (u32 != 1)
-			continue;
-
-
+		
 		item = ParamTree_Find(node, "first_reg_adr", PARAM_TREE_SEARCH_ITEM);
 		if (item && item->value) {
 			u32 = UINT_MAX;
@@ -4071,7 +4059,7 @@ static void shu_update() {
 			*ptr = (mask&u8?true:false);
 
 		shu_reg_counter[i]++;
-		if(shu_reg_counter[i]==shu_status_num[i])  //пропуск стастуного регистра
+		if(shu_reg_counter[i]==shu_status_num[i])  //пропуск статуcного регистра
 			shu_reg_counter[i]++;
 		if (shu_reg_counter[i] >= shu_n_of_regs[i])
 			shu_reg_counter[i] = 0;
