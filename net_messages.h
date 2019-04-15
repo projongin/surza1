@@ -29,6 +29,8 @@ enum GateMessageType{
 	NET_MSG_OSCILLOSCOPE,
 	NET_MSG_SET_INPUT,
 	NET_GATE_MSG_IEC60870_DATA,
+	NET_GATE_MSG_IEC60870_EVENTS,
+	NET_MSG_COMMAND,
 
 	NET_MSG_VYBORG_INFO = 40
 };
@@ -223,6 +225,22 @@ typedef struct {
 } msg_type_set_input_t;
 
 //----------------------------------
+
+
+
+
+
+// commands ------------------------
+
+typedef struct msg_type_command_tt {
+	uint8_t  hash[16]; //config id
+	uint32_t index;    //BOOL_IN index
+	uint8_t  reserv[16];
+} msg_type_command_t;
+
+//----------------------------------
+
+
 
 
 

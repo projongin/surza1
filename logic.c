@@ -290,6 +290,7 @@ static bool init_oscilloscope();
 static bool init_set_inputs();
 static bool init_steptime();
 static bool init_shu();
+static bool init_commands();
 
 
 int logic_init() {
@@ -381,6 +382,12 @@ int logic_init() {
 			//инициализация ШУ
 			if (!init_shu()) {
 				LOG_AND_SCREEN("SHU init failed!");
+				break;
+			}
+			
+			//Инициализация команд
+			if (!init_commands()) {
+				LOG_AND_SCREEN("COMMANDS init failed!");
 				break;
 			}
 
@@ -3672,68 +3679,78 @@ void osc_test_func() {
 }
 
 
+
+
 //------------------------------------------------------------------------
 //  Удаленная установка входов МЯД
 //------------------------------------------------------------------------
+
+bool set_inputs_init_ok;
 
 static float*   set_inputs_data_f;
 static int32_t* set_inputs_data_i;
 static uint8_t* set_inputs_data_b;
 
-static uint8_t* set_inputs_update_f;
-static uint8_t* set_inputs_update_i;
-static uint8_t* set_inputs_update_b;
+static unsigned* set_inputs_index_f;
+static unsigned* set_inputs_index_i;
+static unsigned* set_inputs_index_b;
 
-static volatile int set_inputs_new_data_flag;
-
-//задержка, если новое сообщение пытается записать новые данные, а старые еще не обработаны в прерывании
-//жду как минимум один такт сурзы , чтоб не терять данные (менять их сразу нельзя, так как они могут начать обновляться в прерывании в любой момент)
-static RTKDuration set_inputs_delay;
+static unsigned set_inputs_data_f_ptr;
+static unsigned set_inputs_data_i_ptr;
+static unsigned set_inputs_data_b_ptr;
 
 void set_inputs_net_callback(net_msg_t* msg, uint64_t channel);
 
 
-
 static bool init_set_inputs() {
 
-	atom_set_state(&set_inputs_new_data_flag, 0);
+	set_inputs_init_ok = false;
+
+	set_inputs_data_f_ptr = 0;
+	set_inputs_data_i_ptr = 0;
+	set_inputs_data_b_ptr = 0;
+
+	set_inputs_data_f = NULL;
+	set_inputs_data_i = NULL;
+	set_inputs_data_b = NULL;
+
+	set_inputs_index_f = NULL;
+	set_inputs_index_i = NULL;
+	set_inputs_index_b = NULL;
+
 
 	//выделение памяти для хранения записываемых значений и флагов обновления
 	set_inputs_data_f = (float*)malloc(math_real_in_num * 4);
 	set_inputs_data_i = (int32_t*)malloc(math_int_in_num * 4);
 	set_inputs_data_b = (uint8_t*)malloc(math_bool_in_num);
 
-	set_inputs_update_f = (uint8_t*)malloc(math_real_in_num);
-	set_inputs_update_i = (uint8_t*)malloc(math_int_in_num);
-	set_inputs_update_b = (uint8_t*)malloc(math_bool_in_num);
+	set_inputs_index_f = (unsigned*)malloc(sizeof(unsigned)*math_real_in_num);
+	set_inputs_index_i = (unsigned*)malloc(sizeof(unsigned)*math_int_in_num);
+	set_inputs_index_b = (unsigned*)malloc(sizeof(unsigned)*math_bool_in_num);
 
-	if (set_inputs_data_f == NULL || set_inputs_data_i == NULL || set_inputs_data_b == NULL
-		|| set_inputs_update_f == NULL || set_inputs_update_i == NULL || set_inputs_update_b == NULL) {
+	if (set_inputs_data_f == NULL || set_inputs_data_i == NULL || set_inputs_data_b == NULL ||
+		set_inputs_index_f == NULL || set_inputs_index_i == NULL || set_inputs_index_b == NULL) {
 		if (set_inputs_data_f) free(set_inputs_data_f);
 		if (set_inputs_data_i) free(set_inputs_data_i);
 		if (set_inputs_data_b) free(set_inputs_data_b);
-		if (set_inputs_update_f) free(set_inputs_update_f);
-		if (set_inputs_update_i) free(set_inputs_update_i);
-		if (set_inputs_update_b) free(set_inputs_update_b);
+		if (set_inputs_index_f) free(set_inputs_index_f);
+		if (set_inputs_index_i) free(set_inputs_index_i);
+		if (set_inputs_index_b) free(set_inputs_index_b);
 		return false;
 	}
 
-	memset(set_inputs_update_f, 0, math_real_in_num);
-	memset(set_inputs_update_i, 0, math_int_in_num);
-	memset(set_inputs_update_b, 0, math_bool_in_num);
-
-
-	set_inputs_delay = CLKMicroSecsToTicks((int)SurzaPeriod()*2);
-	if (set_inputs_delay == 0)
-		set_inputs_delay = 1;
-
 	net_add_dispatcher((uint8_t)NET_MSG_SET_INPUT, set_inputs_net_callback);
+
+	set_inputs_init_ok = true;
 
 	return true;
 }
 
 
 void set_inputs_net_callback(net_msg_t* msg, uint64_t channel) {
+
+	if (!set_inputs_init_ok)
+		return;
 
 	if (msg->size < sizeof(msg_type_set_input_t))
 		return;
@@ -3750,14 +3767,6 @@ void set_inputs_net_callback(net_msg_t* msg, uint64_t channel) {
 		return;
 
 
-	if (atom_get_state(&set_inputs_new_data_flag)) {
-		//подождать как минимум один такт сурзы
-		RTKDelay(set_inputs_delay);
-
-		if (atom_get_state(&set_inputs_new_data_flag))
-			return;
-	}
-
 	input_value_t* val = (input_value_t*)(i_msg + 1);
 
 	for (unsigned i = i_msg->num; i != 0; i--, val++) {
@@ -3769,62 +3778,181 @@ void set_inputs_net_callback(net_msg_t* msg, uint64_t channel) {
 			if (index < math_real_in_num) {
 				global_spinlock_lock();
 				if (_finite(val->val.f)) {
-					set_inputs_data_f[index] = val->val.f;
-					set_inputs_update_f[index] = 1;
+					set_inputs_data_f[set_inputs_data_f_ptr] = val->val.f;
+					set_inputs_index_f[set_inputs_data_f_ptr] = index;
+					set_inputs_data_f_ptr++;
 				}
 			    global_spinlock_unlock();
 			}
 			break;
 		case SURZA_INPUT_TYPE_INT32:
 			if (index < math_int_in_num) {
-				set_inputs_data_i[index] = val->val.i;
-				set_inputs_update_i[index] = 1;
+				global_spinlock_lock();
+				 set_inputs_data_i[set_inputs_data_i_ptr] = val->val.i;
+				 set_inputs_index_i[set_inputs_data_i_ptr] = index;
+				 set_inputs_data_i_ptr++;
+				global_spinlock_unlock();
 			}
 			break;
 		case SURZA_INPUT_TYPE_BOOL:
 			if (index < math_bool_in_num) {
-				set_inputs_data_b[index] = val->val.b ? true : false;
-				set_inputs_update_b[index] = 1;
+				global_spinlock_lock();
+				 set_inputs_data_b[set_inputs_data_b_ptr] = val->val.b ? true : false;
+				 set_inputs_index_b[set_inputs_data_b_ptr] = index;
+				 set_inputs_data_b_ptr++;
+				global_spinlock_unlock();
 			}
 			break;
 		default: return;
 		}
 
-
 	}
-
-	
-    atom_set_state(&set_inputs_new_data_flag, 1);
 
 }
 
 
 void set_inputs() {
 
-	if (atom_get_state(&set_inputs_new_data_flag) == 0)
+	while (set_inputs_data_f_ptr) {
+		set_inputs_data_f_ptr--;
+		math_real_in[set_inputs_index_f[set_inputs_data_f_ptr]] = set_inputs_data_f[set_inputs_data_f_ptr];
+	}
+
+	while (set_inputs_data_i_ptr) {
+		set_inputs_data_i_ptr--;
+		math_int_in[set_inputs_index_i[set_inputs_data_i_ptr]] = set_inputs_data_i[set_inputs_data_i_ptr];
+	}
+
+	while (set_inputs_data_b_ptr) {
+		set_inputs_data_b_ptr--;
+		math_bool_in[set_inputs_index_b[set_inputs_data_b_ptr]] = set_inputs_data_b[set_inputs_data_b_ptr];
+	}
+	
+}
+
+
+
+
+//------------------------------------------------------------------------
+//  Команды
+//------------------------------------------------------------------------
+static bool commands_init_ok;
+
+static bool* commands_allowed;
+static unsigned* commands_apply_stack;
+static unsigned commands_apply_stack_ptr;
+static unsigned* commands_turnoff_stack;
+static unsigned commands_turnoff_stack_ptr;
+
+
+static void commands_net_callback(net_msg_t* msg, uint64_t channel) {
+
+	if (!commands_init_ok)
 		return;
 
-	for (unsigned i = 0; i < math_real_in_num; i++)
-		if (set_inputs_update_f[i]) {
-			set_inputs_update_f[i] = 0;
-			math_real_in[i] = set_inputs_data_f[i];
-		}
+	//проверка сообщения
 
-	for (unsigned i = 0; i < math_int_in_num; i++)
-		if (set_inputs_update_i[i]) {
-			set_inputs_update_i[i] = 0;
-			math_int_in[i] = set_inputs_data_i[i];
-		}
+	if (msg->size < sizeof(msg_type_command_t))
+		return;
 
-	for (unsigned i = 0; i < math_bool_in_num; i++)
-		if (set_inputs_update_b[i]) {
-			set_inputs_update_b[i] = 0;
-			math_bool_in[i] = set_inputs_data_b[i];
-		}
+	msg_type_command_t* cmd_msg = (msg_type_command_t*)&msg->data[0];
 
-	atom_set_state(&set_inputs_new_data_flag, 0);
+	if (memcmp(cmd_msg->hash, settings_header->hash, 16))
+		return;
+
+	if (cmd_msg->index >= math_bool_in_num)
+		return;
+
+	if (!commands_allowed[cmd_msg->index])
+		return;
+
+	//добавление команды в стек команд
+
+	global_spinlock_lock();
+	if (commands_apply_stack_ptr < math_bool_in_num)
+		commands_apply_stack[commands_apply_stack_ptr++] = cmd_msg->index;
+	global_spinlock_unlock();
 
 }
+
+
+static bool init_commands() {
+
+	commands_init_ok = false;
+
+	commands_allowed = NULL;
+	commands_apply_stack = NULL;
+	commands_turnoff_stack = NULL;
+	commands_apply_stack_ptr = 0;
+	commands_turnoff_stack_ptr = 0;
+
+	param_tree_node_t* commands_node = ParamTree_Find(ParamTree_MainNode(), "COMMANDS", PARAM_TREE_SEARCH_NODE);
+	if (!commands_node) {
+		LOG_AND_SCREEN("No COMMANDS");
+		return true;   // команды не используются
+	}
+
+
+	//выделение памяти под данные
+	commands_allowed = (bool*)malloc(math_bool_in_num);
+	commands_apply_stack = (unsigned*)malloc(math_bool_in_num);
+	commands_turnoff_stack = (unsigned*)malloc(math_bool_in_num);
+
+	if (!commands_allowed || !commands_apply_stack || !commands_turnoff_stack) {
+		if (commands_allowed) free(commands_allowed);
+		if (commands_apply_stack) free(commands_apply_stack);
+		if (commands_turnoff_stack) free(commands_turnoff_stack);
+		return false;
+	}
+
+
+	for (unsigned i = 0; i < math_bool_in_num; i++)
+		commands_allowed[i] = false;
+
+	
+	//получение количества данных
+	param_tree_node_t* node;
+	unsigned num;
+
+	for (node = ParamTree_Child(commands_node); node; node = node->next) {
+
+		param_tree_node_t* item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+
+		if (!item || !item->value || sscanf_s(item->value, "%u", &num) <= 0)
+			return false;
+
+		if (num >= math_bool_in_num)
+			return false;
+
+		commands_allowed[num] = true;
+
+	}
+
+	net_add_dispatcher((uint8_t)NET_MSG_COMMAND, commands_net_callback);
+	
+	commands_init_ok = true;
+
+	return true;
+}
+
+
+static void commands_apply() {
+
+	//снятие команд предыдущего такта
+	while (commands_turnoff_stack_ptr)
+		math_bool_in[commands_turnoff_stack[--commands_turnoff_stack_ptr]] = false;
+
+	//применение команд текущего такта
+	while (commands_apply_stack_ptr) {
+		math_bool_in[commands_apply_stack[--commands_apply_stack_ptr]] = true;
+		commands_turnoff_stack[commands_turnoff_stack_ptr++] = commands_apply_stack[commands_apply_stack_ptr];
+	}
+
+}
+
+
+//--------------------------------------------------------------------------------------------------------------------
+
 
 
 
@@ -4132,7 +4260,7 @@ void delta_HMI_init_regs() {
 		if (delta_HMI_b) free(delta_HMI_b);
 		return;
 	}
-
+	
 	delta_HMI_init_flag = true;
 }
 
@@ -4446,6 +4574,8 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	steptime_copy();
 
 	shu_update();
+
+	commands_apply();
 
 	// ====== вызов МЯДа  ==================
 	DEBUG_ADD_POINT(24);
