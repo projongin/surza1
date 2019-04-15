@@ -6,6 +6,9 @@
 #include <float.h>
 
 #include <Rtk32.h>
+#include <Rtfiles.h>
+#include <rttarget.h>
+
 #include "Clock.h"
 
 #include "global_defines.h"
@@ -38,7 +41,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num);
 
 
 #define SETTINGS_FILENAME  "settings.bin"
-#define FIRMWARE_FILENAME  "Surza.RTA"
+#define FIRMWARE_FILENAME  "Surza.rtb"
 #define PARAMS_FILENAME    "params.dat"
 
 
@@ -260,18 +263,34 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 		return;
 	}
 
-	//удалить атрибут "только чтение"
-	int ttt = RTFSetAttributes(FIRMWARE_FILENAME, 0);
-	if (ttt < 0) {
-		LOG_AND_SCREEN("RTFSetAttributes return %d", ttt);
-	}
-
 	if (filesystem_write_file(FIRMWARE_FILENAME, ((char*)f_msg)+f_msg->data_offset,f_msg->bytes) != FILESYSTEM_NO_ERR) {
 		LOG_AND_SCREEN("Error! Write file \"%s\" failed!", FIRMWARE_FILENAME);
 		return;
 	}
 
-	RTFSetAttributes(FIRMWARE_FILENAME, RTF_ATTR_READ_ONLY);
+
+	//запись прошивки на диск
+
+	//память под буфер
+	int buf_size = 0xffff;
+
+	uint8_t* buf = malloc(buf_size);
+	if (!buf) {
+		LOG_AND_SCREEN("Error! Memory allocation failed!");
+		return;
+	}
+
+	int res = RTMakeBootDisk('C', -1, FIRMWARE_FILENAME, buf, buf_size, 0);
+	free(buf);
+
+	//удаление rtb файла 
+	filesystem_delete_file(FIRMWARE_FILENAME);
+
+	if (res!=RT_BDISK_SUCCESS) {
+		LOG_AND_SCREEN("Error! RTMakeBootDisk() return %d", res);
+		return;
+	}	
+
 
 	LOG_AND_SCREEN("Reboot...");
 	reboot();
