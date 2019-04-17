@@ -4173,7 +4173,20 @@ static bool init_shu() {
 
 
 		shu_en[shu_n] = true;
-		
+
+
+		//запись отладочных режимов
+#if (SHU_DEBUG_MODE_ONE_CELL==1 || SHU_DEBUG_MODE_NO_FEEDBACK==1)
+		uint16_t reg = 0xE700;
+#if (SHU_DEBUG_MODE_ONE_CELL==1)
+		reg |= 0x0001;
+#endif
+#if (SHU_DEBUG_MODE_NO_FEEDBACK==1)
+		reg |= 0x0002;
+#endif
+		RTOutW(shu_reset_adr[shu_n], reg);
+#endif
+
 	}
 
 	shu_init_ok = true;
