@@ -4045,7 +4045,7 @@ static void steptime_copy() {
 //------------------------------------------------------------------------
 static bool shu_init_ok = false;
 
-static unsigned shu_en[2];
+static bool shu_en[2];
 static unsigned shu_first_adr[2];
 static unsigned shu_status_num[2];
 static unsigned shu_status_adr[2];
@@ -4053,6 +4053,8 @@ static unsigned shu_reset_adr[2];
 static unsigned shu_n_of_regs[2];
 static unsigned shu_first_input[2];
 static unsigned shu_reset_output[2];
+static bool shu_debug_mode_one[2];
+static bool shu_debug_mode_no_fb[2];
 
 static unsigned shu_reg_counter[2];
 
@@ -4155,6 +4157,16 @@ static bool init_shu() {
 			shu_reset_output[shu_n] = u32;
 
 
+		shu_debug_mode_one[shu_n] = false;
+		item = ParamTree_Find(node, "debug_one_cell", PARAM_TREE_SEARCH_ITEM);
+		if(item && item->value[0] == '1')
+			shu_debug_mode_one[shu_n] = true;
+
+		shu_debug_mode_no_fb[shu_n] = false;
+		item = ParamTree_Find(node, "debug_no_fb", PARAM_TREE_SEARCH_ITEM);
+		if(item && item->value[0] == '1')
+			shu_debug_mode_no_fb[shu_n] = true;
+
 
 		//проверки
 
@@ -4176,16 +4188,10 @@ static bool init_shu() {
 
 
 		//запись отладочных режимов
-#if (SHU_DEBUG_MODE_ONE_CELL==1 || SHU_DEBUG_MODE_NO_FEEDBACK==1)
-		uint16_t reg = 0xE700;
-#if (SHU_DEBUG_MODE_ONE_CELL==1)
-		reg |= 0x0001;
-#endif
-#if (SHU_DEBUG_MODE_NO_FEEDBACK==1)
-		reg |= 0x0002;
-#endif
-		RTOutW(shu_reset_adr[shu_n], reg);
-#endif
+		uint16_t reg = 0x00E7;
+		if (shu_debug_mode_one[shu_n]) reg |= 0x0100;
+		if (shu_debug_mode_no_fb[shu_n]) reg |= 0x0200;
+		RTOutW(shu_reset_adr[shu_n] + 2, reg);
 
 	}
 
