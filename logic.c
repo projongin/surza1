@@ -1603,8 +1603,7 @@ static bool params_read_file() {
 				break;
 
 			case PARAM_TYPE_BOOL:
-				if (ptr->i32<params_ptr[i].val_min.i32 < 0
-					|| ptr->i32>params_ptr[i].val_max.i32 > 1)
+				if (ptr->i32 < 0 || ptr->i32 > 1)
 					ret = false;
 				else
 					params_ptr[i].val.i32 = ptr->i32;
@@ -3097,7 +3096,7 @@ void oscilloscope_add() {
 			//если есть уже готовые осциллограммы (указатели головы и хвоста отличаются, либо добавлена только одна большая
 			//осциллограмма и указатель головы в таком случае еще не передвинут (osc_internal_headers_head == osc_internal_headers_tail), но установлен признак finished)
 			if(   osc_internal_headers_head != osc_internal_headers_tail
-			  || (osc_internal_headers_head == osc_internal_headers_tail && osc_internal_headers[osc_internal_headers_head].finished)){
+			  || (/*osc_internal_headers_head == osc_internal_headers_tail && */ osc_internal_headers[osc_internal_headers_head].finished)){
 				//попытка взять новую свободную структуру
 				unsigned tmp = osc_internal_headers_head + 1;
 				if (tmp == OSC_INTERNAL_HEADERS_MAX)
