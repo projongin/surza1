@@ -310,6 +310,7 @@ static bool init_set_inputs();
 static bool init_steptime();
 static bool init_shu();
 static bool init_commands();
+static bool init_isa();
 
 
 int logic_init() {
@@ -409,6 +410,13 @@ int logic_init() {
 				LOG_AND_SCREEN("COMMANDS init failed!");
 				break;
 			}
+
+			//Инициализация работы с шиной ISA из МЯДа
+			if (!init_isa()) {
+				LOG_AND_SCREEN("COMMANDS init failed!");
+				break;
+			}
+
 
 			ok = true;
 			break;
@@ -2773,7 +2781,7 @@ static bool init_oscilloscope() {
 		return true;   // осциллограф событий не используются
 	}
 
-	//считывание общих параметров журнала
+	//считывание общих параметров осциллографа
 	param_tree_node_t* item;
 
 
@@ -4264,6 +4272,179 @@ static void shu_reset() {
 
 
 //------------------------------------------------------------------------
+//  Работа с шиной ISA из МЯДа
+//------------------------------------------------------------------------
+
+static bool isa_first_call;
+
+typedef struct {
+	unsigned adr;
+	int32_t* data;
+	uint8_t* control;
+} isa_table_t;
+
+static isa_table_t* isa_in_table;
+static isa_table_t* isa_out_table;
+
+unsigned isa_in_table_size;
+unsigned isa_out_table_size;
+
+static bool init_isa() {
+
+	isa_first_call = true;
+	isa_in_table_size = 0;
+	isa_out_table_size = 0;
+
+
+	param_tree_node_t* isa_node = ParamTree_Find(ParamTree_MainNode(), "ISA_IN", PARAM_TREE_SEARCH_NODE);
+	if (isa_node) {
+
+		//определение количества записей
+		isa_in_table_size = ParamTree_ChildNum(isa_node);
+		if (isa_in_table_size) {
+
+			//выделение памяти под таблицу
+			isa_in_table = (isa_table_t*) malloc(sizeof(isa_table_t)*isa_in_table_size);
+			if (isa_in_table) {
+
+				//получение данных
+				param_tree_node_t* node;
+				param_tree_node_t* item;
+				bool err = false;
+				unsigned u32, cnt=0;
+				isa_table_t* ptr = isa_in_table;
+
+				for (node = ParamTree_Child(isa_node); node && !err && cnt<isa_in_table_size; node = node->next, ptr++) {
+
+					item = ParamTree_Find(node, "data_num", PARAM_TREE_SEARCH_ITEM);
+					if (!item || !item->value)	err = true;
+					else if (sscanf_s(item->value, "%u", &u32) <= 0  || u32 >= math_int_in_num ) err = true;
+					else ptr->data = &MATH_IO_INT_IN[u32];
+
+					if (!err) {
+						item = ParamTree_Find(node, "control_num", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_bool_out_num) err = true;
+						else ptr->control = &MATH_IO_BOOL_OUT[u32];
+					}
+
+					if (!err) {
+						item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= 0xffff) err = true;
+						else ptr->adr = u32;
+					}
+
+				}
+
+				if (err) {
+					free(isa_in_table);
+					isa_in_table_size = 0;
+					return false;
+				}
+
+			}
+			else
+				isa_in_table_size = 0;
+
+		}
+
+	}
+
+
+	isa_node = ParamTree_Find(ParamTree_MainNode(), "ISA_OUT", PARAM_TREE_SEARCH_NODE);
+	if (isa_node) {
+
+		//определение количества записей
+		isa_out_table_size = ParamTree_ChildNum(isa_node);
+		if (isa_out_table_size) {
+
+			//выделение памяти под таблицу
+			isa_out_table = (isa_table_t*)malloc(sizeof(isa_table_t)*isa_out_table_size);
+			if (isa_out_table) {
+
+				//получение данных
+				param_tree_node_t* node;
+				param_tree_node_t* item;
+				bool err = false;
+				unsigned u32, cnt = 0;
+				isa_table_t* ptr = isa_out_table;
+
+				for (node = ParamTree_Child(isa_node); node && !err && cnt<isa_out_table_size; node = node->next, ptr++) {
+
+					item = ParamTree_Find(node, "data_num", PARAM_TREE_SEARCH_ITEM);
+					if (!item || !item->value)	err = true;
+					else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_int_out_num) err = true;
+					else ptr->data = &MATH_IO_INT_OUT[u32];
+
+					if (!err) {
+						item = ParamTree_Find(node, "control_num", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_bool_out_num) err = true;
+						else ptr->control = &MATH_IO_BOOL_OUT[u32];
+					}
+
+					if (!err) {
+						item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= 0xffff) err = true;
+						else ptr->adr = u32;
+					}
+
+				}
+
+				if (err) {
+					free(isa_out_table);
+					isa_out_table_size = 0;
+					if (isa_in_table_size) {
+						free(isa_in_table);
+						isa_in_table_size = 0;
+					}
+					return false;
+				}
+
+			}
+			else
+				isa_in_table_size = 0;
+
+		}
+
+	}
+
+	return true;
+}
+
+
+static void isa_read() {
+	if (isa_first_call) {
+		isa_first_call = false;
+		return;
+    }
+
+	isa_table_t* ptr = isa_in_table;
+	for (unsigned i = 0; i < isa_in_table_size; i++, ptr++)
+		if (*(ptr->control))
+			*(ptr->data) = (int32_t)RTIn(ptr->adr);
+
+}
+
+static void isa_write() {
+
+	isa_table_t* ptr = isa_out_table;
+	for (unsigned i = 0; i < isa_out_table_size; i++, ptr++)
+		if (*(ptr->control))
+			RTOut(ptr->adr,  (uint8_t)(*(ptr->data) & 0xff));
+
+}
+
+//-----------------------------------------------------------------------
+
+
+
+
+
+
+//------------------------------------------------------------------------
 #ifdef DELTA_HMI_ENABLE
 
 #define DELTA_MAX_REGS_TO_SEND   80   //всегда должно быть кратно 2
@@ -4614,6 +4795,8 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	commands_apply();
 
+	isa_read();
+
 	// ====== вызов МЯДа  ==================
 	DEBUG_ADD_POINT(24);
     MYD_step();
@@ -4641,6 +4824,8 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	DEBUG_ADD_POINT(37);
 
 	shu_reset();
+
+	isa_write();
 
 	steptime_update();
 }
