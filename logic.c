@@ -413,7 +413,7 @@ int logic_init() {
 
 			//»нициализаци€ работы с шиной ISA из ћяƒа
 			if (!init_isa()) {
-				LOG_AND_SCREEN("COMMANDS init failed!");
+				LOG_AND_SCREEN("ISA init failed!");
 				break;
 			}
 
