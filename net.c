@@ -704,6 +704,17 @@ static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buf
 		  return 0;
 	  }
 
+	/****************************/
+	/*
+	extern unsigned char test_frame[0x3c];
+	extern void SendFrameRaw(DWORD Len);
+	extern BYTE* GetFrameBuf();
+
+	memcpy(GetFrameBuf(), test_frame, sizeof(test_frame));
+	SendFrameRaw(sizeof(test_frame));
+	*/
+	/*****************************/
+
 	return length;
 }
 

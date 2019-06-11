@@ -344,12 +344,23 @@ static void WaitCmdDone(dword iobase)
 }
 
 // ********************************************************************
+
+/**********/
+PIFACE save_pi;
+DCU my_dcu;
+/************/
+
 static RTIP_BOOLEAN i82559_open(PIFACE pi)
 {
     int i;
     dword PCILocation;
     PFWORD pbuf;
     PI82559_SOFTC sc;
+
+	/**********/
+	save_pi = pi;
+	my_dcu = os_alloc_packet(ETHERSIZE, DRIVER_ALLOC);
+	/***********/
 
     #define RTPCI_INTEL_REG_IOBASE  0x14
 
@@ -699,6 +710,11 @@ static RTIP_BOOLEAN i82559_setmcast(PIFACE pi)      // __fn__
 // ********************************************************************
 static void i82559_close(PIFACE pi)                     //__fn__
 {
+
+	/*************/
+	os_free_packet(my_dcu);
+	/************/
+
     int i;
     PI82559_SOFTC sc = iface_to_i82559_softc(pi);
 
@@ -758,7 +774,7 @@ static RTIP_BOOLEAN i82559_xmit_done(PIFACE pi, DCU msg, RTIP_BOOLEAN success)
     return(TRUE);
 }
 
-static void do_send(PI82559_SOFTC sc, const void * Data, dword length, DCU msg)
+static void do_send(PI82559_SOFTC sc, const void * Data, dword length, DCU msg, unsigned custom)
 {
     TXDSC * pt;
     TXDSC * plast_tx;
@@ -770,7 +786,7 @@ static void do_send(PI82559_SOFTC sc, const void * Data, dword length, DCU msg)
 
     pt = sc->tx_descs + sc->this_tx;
 
-    if (!msg)
+    if (!custom && !msg)
        _rttMonSetSendDesc(sc, pt);
 
     sc->tx_dcus[sc->this_tx] = msg;
@@ -801,7 +817,7 @@ static void do_send(PI82559_SOFTC sc, const void * Data, dword length, DCU msg)
 // ********************************************************************
 static int i82559_xmit(PIFACE pi, DCU msg)
 {
-    do_send(iface_to_i82559_softc(pi), DCUTODATA(msg), DCUTOPACKET(msg)->length, msg);
+    do_send(iface_to_i82559_softc(pi), DCUTODATA(msg), DCUTOPACKET(msg)->length, msg, 0);
     return 0;
 }
 
@@ -830,8 +846,23 @@ static void RTTMonSendDone(void * DriverData, void * SendDesc)
 /* ********************************************************************   */
 static void RTTMonSendPacket(void * DriverData, const BYTE * Data, DWORD Len)
 {
-   do_send(DriverData, Data, Len, NULL);
+   do_send(DriverData, Data, Len, NULL, 0);
 }
+
+
+
+/*******************************************************************************/
+void SendFrameRaw(DWORD Len) {
+	extern volatile int dcus_cnt;
+	dcus_cnt++;
+
+	do_send(iface_to_i82559_softc(save_pi), DCUTODATA(my_dcu), Len, NULL, 1);
+}
+
+BYTE* GetFrameBuf() { return DCUTODATA(my_dcu); }
+/*******************************************************************************/
+
+
 
 // ********************************************************************
 static int i82559_interrupt(PI82559_SOFTC sc)
@@ -1037,6 +1068,18 @@ static void i82559_rcv_ring(PI82559_SOFTC sc)
                    sc->stats.bytes_in += length - sizeof(struct _ether);
                    DCUTOPACKET(invoke_msg)->length = length;
                    ks_invoke_input(sc->iface, invoke_msg);
+				   /********************/
+				   
+				   extern EPACKET dcus[10];
+				   extern volatile int dcus_cnt;
+				   extern char dcu_data[10][1600];
+				   if (dcus_cnt < 10) {
+					   memcpy(&dcus[dcus_cnt], invoke_msg, sizeof(EPACKET));
+					   memcpy(&dcu_data[dcus_cnt][0], (const void*)pthisbd->buffer, length);
+					   dcus_cnt++;
+				   }
+				   
+				   /*********************/
                 }
                 else
                 {
