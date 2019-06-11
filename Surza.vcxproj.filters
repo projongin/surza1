@@ -90,6 +90,9 @@
     <ClCompile Include="win32_stub.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="I82559.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="net.h">

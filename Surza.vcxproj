@@ -110,8 +110,8 @@
       <WarningLevel>Level3</WarningLevel>
       <MinimalRebuild>false</MinimalRebuild>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(RTTarget)\Include;</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MSVS_DEBUG;WIN32;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(RTTarget)\Include;$(RTTarget)\Source\Rtip</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>MSVS_DEBUG;WIN32;_CRT_SECURE_NO_WARNINGS;RTKMSP3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>.\Debug\</AssemblerListingLocation>
       <PrecompiledHeaderOutputFile>.\Debug\Surza.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>.\Debug\</ObjectFileName>
@@ -164,8 +164,8 @@
       <WarningLevel>Level3</WarningLevel>
       <MinimalRebuild>false</MinimalRebuild>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(RTTarget)\Include;</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MSVS_DEBUG;WIN32;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(RTTarget)\Include;$(RTTarget)\Source\Rtip</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>MSVS_DEBUG;WIN32;_CRT_SECURE_NO_WARNINGS;RTKMSP3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>.\Debug\</AssemblerListingLocation>
       <PrecompiledHeaderOutputFile>.\Debug\Surza.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>.\Debug\</ObjectFileName>
@@ -217,8 +217,8 @@
       <Optimization>MaxSpeed</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <WarningLevel>Level3</WarningLevel>
-      <AdditionalIncludeDirectories>$(RTTarget)\Include;</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NDEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(RTTarget)\Include;$(RTTarget)\Source\Rtip</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;WIN32;RTKMSP3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>.\Release\</AssemblerListingLocation>
       <PrecompiledHeaderOutputFile>.\Release\Surza.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>.\Release\</ObjectFileName>
@@ -279,8 +279,8 @@
       <Optimization>MaxSpeed</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <WarningLevel>Level3</WarningLevel>
-      <AdditionalIncludeDirectories>$(RTTarget)\Include;</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NDEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(RTTarget)\Include;$(RTTarget)\Source\Rtip</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;WIN32;RTKMSP3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>.\Release\</AssemblerListingLocation>
       <PrecompiledHeaderOutputFile>.\Release\Surza.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>.\Release\</ObjectFileName>
@@ -347,6 +347,7 @@
     <ClCompile Include="crc32.cpp" />
     <ClCompile Include="delta_hmi.c" />
     <ClCompile Include="filesystem.c" />
+    <ClCompile Include="I82559.c" />
     <ClCompile Include="init.c" />
     <ClCompile Include="launchnum.c" />
     <ClCompile Include="log.c" />
