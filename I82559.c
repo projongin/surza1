@@ -19,6 +19,10 @@
 //
 //       Data Structure Definition:
 
+
+#define SURZA_IFACE_N    0
+
+
 #define DIAG_SECTION_KERNEL DIAG_SECTION_DRIVER
 
 #include "sock.h"
@@ -348,6 +352,7 @@ static void WaitCmdDone(dword iobase)
 /**********/
 PIFACE save_pi;
 DCU my_dcu;
+unsigned char* frame_header;
 /************/
 
 static RTIP_BOOLEAN i82559_open(PIFACE pi)
@@ -356,11 +361,6 @@ static RTIP_BOOLEAN i82559_open(PIFACE pi)
     dword PCILocation;
     PFWORD pbuf;
     PI82559_SOFTC sc;
-
-	/**********/
-	save_pi = pi;
-	my_dcu = os_alloc_packet(ETHERSIZE, DRIVER_ALLOC);
-	/***********/
 
     #define RTPCI_INTEL_REG_IOBASE  0x14
 
@@ -418,6 +418,11 @@ static RTIP_BOOLEAN i82559_open(PIFACE pi)
     RTKSetIRQStack(pi->irq_val, 1024);
     RTInstallSharedIRQHandlerEx(pi->irq_val, (RTKIRQHandlerEx)i82559_interrupt, sc);
 
+	/****************************************/
+	RTKIRQTopPriority(pi->irq_val, 8);
+	RTKSetIRQStack(pi->irq_val, 65536);
+	/*************************************/
+
     if (!i82559_init_rcv_ring(sc))
     {
         DEBUG_ERROR("init_rcv_ring fails == ", DINT1 , (dword) sc, 0);
@@ -448,6 +453,18 @@ static RTIP_BOOLEAN i82559_open(PIFACE pi)
 
     // Tell RTTarget-32 Monitor about this
     _rttMonIFaceInstall(sc, PCILocation, RTTMonSendPacket, RTTMonSendDone);
+
+
+	/**********/
+	if (pi->minor_number == SURZA_IFACE_N) {
+		save_pi = pi;
+		my_dcu = os_alloc_packet(ETHERSIZE, DRIVER_ALLOC);
+		frame_header = DCUTODATA(my_dcu);
+		memcpy(frame_header + 6, save_pi->addr.my_hw_addr, 6);
+		frame_header[12] = 0x11;
+		frame_header[13] = 0x22;
+	}
+	/***********/
 
     return TRUE;
 }
@@ -712,7 +729,9 @@ static void i82559_close(PIFACE pi)                     //__fn__
 {
 
 	/*************/
-	os_free_packet(my_dcu);
+	if (pi->minor_number == SURZA_IFACE_N) {
+		os_free_packet(my_dcu);
+	}
 	/************/
 
     int i;
@@ -853,13 +872,11 @@ static void RTTMonSendPacket(void * DriverData, const BYTE * Data, DWORD Len)
 
 /*******************************************************************************/
 void SendFrameRaw(DWORD Len) {
-	extern volatile int dcus_cnt;
-	dcus_cnt++;
-
-	do_send(iface_to_i82559_softc(save_pi), DCUTODATA(my_dcu), Len, NULL, 1);
+	if (Len) {
+		Len += sizeof(struct _ether);
+		do_send(iface_to_i82559_softc(save_pi), frame_header, Len >= 60 ? Len : 60, NULL, 1);
+	}
 }
-
-BYTE* GetFrameBuf() { return DCUTODATA(my_dcu); }
 /*******************************************************************************/
 
 
@@ -1012,6 +1029,8 @@ static void i82559_rcv_ring(PI82559_SOFTC sc)
     dword length;
     DCU  msg, invoke_msg;
 
+	char surza_iface = (sc->iface->minor_number == SURZA_IFACE_N) ? 1 : 0;
+
     while (1)
     {
         pthis   = sc->rx_descs + sc->cur_rx;
@@ -1043,48 +1062,71 @@ static void i82559_rcv_ring(PI82559_SOFTC sc)
                 length = pthisbd->count & 0x3fff;
 
                 invoke_msg = NULL;
-    #if RX_COPY_BREAK > 0
-                if (length <= RX_COPY_BREAK)
-                {
-                    invoke_msg = os_alloc_packet_input(length, DRIVER_ALLOC);
-                    if (invoke_msg)
-                        tc_movebytes(DCUTODATA(invoke_msg), pthisbd->buffer, length);
-                }
-                else
-    #endif // RX_COPY_BREAK > 0
-                {
-                    msg = os_alloc_packet_input(ETHERSIZE, DRIVER_ALLOC);
-                    if (msg)
-                    {
-                        // Put the new one in the ring and invoke the old
-                        invoke_msg = sc->rx_dcus[sc->cur_rx];
-                        sc->rx_dcus[sc->cur_rx] = msg;
-                        pthisbd->buffer = (dword) DCUTODATA(sc->rx_dcus[sc->cur_rx]);
-                   }
-                }
-                if (invoke_msg)
-                {
-                   sc->stats.packets_in++;
-                   sc->stats.bytes_in += length - sizeof(struct _ether);
-                   DCUTOPACKET(invoke_msg)->length = length;
-                   ks_invoke_input(sc->iface, invoke_msg);
-				   /********************/
-				   
-				   extern EPACKET dcus[10];
-				   extern volatile int dcus_cnt;
-				   extern char dcu_data[10][1600];
-				   if (dcus_cnt < 10) {
-					   memcpy(&dcus[dcus_cnt], invoke_msg, sizeof(EPACKET));
-					   memcpy(&dcu_data[dcus_cnt][0], (const void*)pthisbd->buffer, length);
-					   dcus_cnt++;
-				   }
-				   
-				   /*********************/
-                }
-                else
-                {
-                    DEBUG_ERROR("I82559 RCV ALLOC FAILED", NOVAR, 0, 0);
-                }
+
+
+				if (surza_iface && ((struct _ether*)pthisbd->buffer)->eth_type==0x2211 ) {
+					/**************/
+					extern unsigned NewSurzaFrame(const void* data_in, unsigned bytes, void* data_out);
+					const unsigned char* in_frame = (const unsigned char*)pthisbd->buffer;
+					memcpy(frame_header, &in_frame[6], 6);
+					SendFrameRaw(NewSurzaFrame(in_frame + sizeof(struct _ether), length - sizeof(struct _ether), frame_header + sizeof(struct _ether)));
+					/***************/
+				}
+				else {
+
+#if RX_COPY_BREAK > 0
+					if (length <= RX_COPY_BREAK)
+					{
+						invoke_msg = os_alloc_packet_input(length, DRIVER_ALLOC);
+						if (invoke_msg)
+							tc_movebytes(DCUTODATA(invoke_msg), pthisbd->buffer, length);
+					}
+					else
+#endif // RX_COPY_BREAK > 0
+					{
+						msg = os_alloc_packet_input(ETHERSIZE, DRIVER_ALLOC);
+						if (msg)
+						{
+							// Put the new one in the ring and invoke the old
+							invoke_msg = sc->rx_dcus[sc->cur_rx];
+							sc->rx_dcus[sc->cur_rx] = msg;
+							pthisbd->buffer = (dword)DCUTODATA(sc->rx_dcus[sc->cur_rx]);
+						}
+					}
+					if (invoke_msg)
+					{
+						sc->stats.packets_in++;
+						sc->stats.bytes_in += length - sizeof(struct _ether);
+						DCUTOPACKET(invoke_msg)->length = length;
+						ks_invoke_input(sc->iface, invoke_msg);
+						/********************/
+						/*
+						extern EPACKET dcus[10];
+						extern volatile int dcus_cnt;
+						extern char dcu_data[10][1600];
+						if (dcus_cnt < 10) {
+							memcpy(&dcus[dcus_cnt], invoke_msg, sizeof(EPACKET));
+							memcpy(&dcu_data[dcus_cnt][0], (const void*)pthisbd->buffer, length);
+							dcus_cnt++;
+						}
+						*/
+
+						/*
+						extern unsigned NewSurzaFrame(const void* data_in, unsigned bytes, void* data_out);
+						unsigned char* in_frame = DCUTODATA(sc->rx_dcus[sc->cur_rx]);
+						memcpy(frame_header, &in_frame[6], 6);
+						SendFrameRaw(NewSurzaFrame(in_frame+sizeof(struct _ether), length - sizeof(struct _ether), frame_header+sizeof(struct _ether)));
+						*/
+
+						/*********************/
+					}
+					else
+					{
+						DEBUG_ERROR("I82559 RCV ALLOC FAILED", NOVAR, 0, 0);
+					}
+
+				}
+
             }
         }
         else // !RX_OK - We have some sort of error, record the statistic
@@ -1105,16 +1147,18 @@ static void i82559_rcv_ring(PI82559_SOFTC sc)
             sc->stats.errors_in++;
         }
 
-        // We have to rearm put the descriptor on the end of the ring now
-        pthis->status = 0x40080000ul;     // end of list
 
-        // Clear last marker of previous descriptor
-        ((BYTE *)&(sc->rx_descs[(sc->cur_rx - 1) & RX_RING_MASK].status))[3] = 0;
+			// We have to rearm put the descriptor on the end of the ring now
+			pthis->status = 0x40080000ul;     // end of list
+
+			// Clear last marker of previous descriptor
+			((BYTE *)&(sc->rx_descs[(sc->cur_rx - 1) & RX_RING_MASK].status))[3] = 0;
 
 #if USE_TIMER
-        sc->last_rx_ticks = sc->cur_ticks;  // pulse keepalive
+			sc->last_rx_ticks = sc->cur_ticks;  // pulse keepalive
 #endif
-        sc->cur_rx = (sc->cur_rx + 1) & RX_RING_MASK;   // Add & wrap to 0
+			sc->cur_rx = (sc->cur_rx + 1) & RX_RING_MASK;   // Add & wrap to 0
+
     }
 }
 
