@@ -297,7 +297,7 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 }
 
 
-
+static bool init_common();
 static bool init_math();
 static bool init_adc();
 static bool init_indi();
@@ -329,8 +329,15 @@ int logic_init() {
 				LOG_AND_SCREEN("Logic main i/o tables init failed!");
 				break;
 			}
-			
+
 			DEBUG_ADD_POINT(301);
+			if (!init_common()) {
+				LOG_AND_SCREEN("COMMON init failed!");
+				break;
+			}
+			
+#if 0
+			
 			if (!init_adc()) {
 				LOG_AND_SCREEN("ADC init failed!");
 				break;
@@ -347,6 +354,7 @@ int logic_init() {
 				LOG_AND_SCREEN("FIU init failed!");
 				break;
 			}
+#endif
 			
 			DEBUG_ADD_POINT(304);
 			if (!init_indi()) {
@@ -491,9 +499,6 @@ int read_settings() {
 	return 0;
 }
 
-
-
-static void MAIN_LOGIC_PERIOD_FUNC();
 
 
 static float* math_real_in;
@@ -839,6 +844,42 @@ void indi_send() {
 
 
 //------------------------------------------------------------------------
+//  COMMON
+//------------------------------------------------------------------------
+
+static unsigned period;
+unsigned SurzaPeriod() { return period; }
+
+
+bool init_common() {
+
+	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	param_tree_node_t* item;
+
+	//считывание периода
+
+	item = ParamTree_Find(node, "PERIOD", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &period) <= 0)
+		return false;
+
+	//защита от деления на 0 в дальнейшей логике
+	if (period == 0)
+		period = 1;
+
+	return true;
+}
+
+
+
+
+
+//------------------------------------------------------------------------
 //  ADC
 //------------------------------------------------------------------------
 
@@ -847,9 +888,7 @@ static unsigned adc_ch_num[2];
 
 static int32_t* adc_table[2][8];
 
-static unsigned adc1_adr, adc2_adr, period;
-
-unsigned SurzaPeriod() { return period; }
+static unsigned adc1_adr, adc2_adr;
 
 void adc_irq_handler(void);
 
@@ -877,14 +916,6 @@ bool init_adc() {
 
 	if (sscanf_s(item->value, "%u", &adc2_adr) <= 0)
 		return false;
-
-	item = ParamTree_Find(node, "PERIOD", PARAM_TREE_SEARCH_ITEM);
-	if (!item || !item->value)
-		return false;
-
-	if (sscanf_s(item->value, "%u", &period) <= 0)
-		return false;
-
 
 	item = ParamTree_Find(ParamTree_MainNode(), "ADC", PARAM_TREE_SEARCH_NODE);
 	if (!item)
@@ -979,13 +1010,14 @@ void adc_irq_handler(void){
 		}
 	}
 
-	
+#if 0
 	//обновление собаки
 	wdt_update();
 
 	//запуск основной функции логики
 	if (init_flags.logic_init)
 		MAIN_LOGIC_PERIOD_FUNC();
+#endif
 
 }
 
@@ -4774,7 +4806,16 @@ void speed_test() {
 
 //основная периодическая функция сурзы
 
-static void MAIN_LOGIC_PERIOD_FUNC() {
+unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out) {
+
+	unsigned send_bytes = 0;
+
+	//обновление собаки
+	wdt_update();
+
+	//запуск основной функции логики
+	if (init_flags.logic_init)
+		return 0;
 
 	DEBUG_ADD_POINT(21);
 
@@ -4783,7 +4824,7 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	DEBUG_ADD_POINT(22);
 
-	dic_read();
+	//dic_read();
 
 	DEBUG_ADD_POINT(23);
 
@@ -4804,10 +4845,10 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	// =====================================
 
 	DEBUG_ADD_POINT(26);
-	dic_write();
+	//dic_write();
 
 	DEBUG_ADD_POINT(27);
-	fiu_write();
+	//fiu_write();
 
 	DEBUG_ADD_POINT(28);
 	indi_copy();
@@ -4828,5 +4869,31 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 	isa_write();
 
 	steptime_update();
+
+
+	return send_bytes;
 }
 
+
+
+
+volatile unsigned test_cnt = 0;
+volatile uint8_t test_data = 0;
+
+unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out) {
+
+	wdt_update();
+
+	if (bytes) {
+
+		*(uint8_t*)data_out = *(uint8_t*)data_in + 1;
+
+		test_data = *(uint8_t*)data_in;
+		test_cnt++;
+
+		return 1;
+	}
+
+	return 0;
+
+}

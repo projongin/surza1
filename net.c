@@ -722,7 +722,7 @@ static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buf
 
 
 #define DEVICE_ID     I82559_DEVICE
-#define DEVICE_MINOR  0               // first device of type DEVICE_ID (use 1 for second, 2 for third, etc)
+#define DEVICE_MINOR  MAIN_LINK_DEVICE            // first device of type DEVICE_ID (use 1 for second, 2 for third, etc)
 
 
 // The following values are ignored for PCI devices (the BIOS supplies
@@ -811,6 +811,36 @@ void InterfaceCleanup(void)
 
 
 
+
+//инициализация связи реального времени по ethernet
+net_err_t net_surza_link_init() {
+
+	int res = xn_bind_i82559(SURZA_LINK_DEVICE);
+	if (res == SOCKET_ERROR) {
+		LOG_AND_SCREEN("net_init(): driver initialization failed");
+		return NET_ERR_ANY;
+	}
+
+	// Open the interface
+	interface = xn_interface_open_config(DEVICE_ID, SURZA_LINK_DEVICE, ED_IO_ADD, ED_IRQ, ED_MEM_ADD);
+	if (interface == SOCKET_ERROR) {
+		int err = xn_getlasterror();
+		LOG_AND_SCREEN(" net_surza_link_init(): Interface config failed : err_num = %d, <%s>", err, xn_geterror_string(err));
+		return NET_ERR_ANY;
+	}
+	else {
+		struct _iface_info ii;
+		xn_interface_info(interface, &ii);
+		LOG_AND_SCREEN("MAC: %02x-%02x-%02x-%02x-%02x-%02x",
+			ii.my_ethernet_address[0], ii.my_ethernet_address[1], ii.my_ethernet_address[2],
+			ii.my_ethernet_address[3], ii.my_ethernet_address[4], ii.my_ethernet_address[5]);
+	}
+
+	return NET_ERR_NO_ERROR;
+}
+
+
+
 //инициализация контроллера и создание tcp сервера
 net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_callback) {
 	DEBUG_ADD_POINT(144);
@@ -830,6 +860,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 	//доп настройки
 	//
 
+	CFG_NIFACES = 2;
 	
 	CFG_TCP_SEND_WAIT_ACK = 0;
 
@@ -961,8 +992,7 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 
 	//-------------------------------------
 
-
-	return NET_ERR_NO_ERROR;
+	return net_surza_link_init();;
 
 err:
 	return NET_ERR_ANY;

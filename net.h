@@ -16,6 +16,9 @@
 #endif
 
 
+#define MAIN_LINK_DEVICE   0    //основной сетевой интерфейс
+#define SURZA_LINK_DEVICE  1    //интерфес для связи реального времени
+
 
 //максимально возможное число одновременных подключений
 #define  NET_MAX_CONNECTIONS_ALLOWED  5

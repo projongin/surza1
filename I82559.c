@@ -20,8 +20,6 @@
 //       Data Structure Definition:
 
 
-#define SURZA_IFACE_N    0
-
 
 #define DIAG_SECTION_KERNEL DIAG_SECTION_DRIVER
 
@@ -29,6 +27,11 @@
 #include "rtip.h"
 #include "rtipext.h"
 #include "pci.h"
+
+/***********/
+#include "net.h"
+#include <Rtkflt.h> 
+/***********/
 
 #if (INCLUDE_I82559)
 
@@ -338,6 +341,10 @@ static void i82559_mdio_write(PI82559_SOFTC sc, int offset, word value);
 static void i82559_rcv_ring(PI82559_SOFTC sc);
 static void i82559_reset_rcv_ring(PI82559_SOFTC sc);
 
+/***********************************************************/
+static int i82559_interrupt_custom(PI82559_SOFTC sc);
+/***********************************************************/
+
 static void WaitCmdDone(dword iobase)
 {
     int i;
@@ -353,6 +360,9 @@ static void WaitCmdDone(dword iobase)
 PIFACE save_pi;
 DCU my_dcu;
 unsigned char* frame_header;
+unsigned surza_irq;
+
+static void* FPUContext;
 /************/
 
 static RTIP_BOOLEAN i82559_open(PIFACE pi)
@@ -414,13 +424,21 @@ static RTIP_BOOLEAN i82559_open(PIFACE pi)
        reinitialization   */
     I82559_OUTDWORD(sc->ia_iobase + SCR_PORT, COMMAND_PORT_RESET);
 
-    // hook the interrupt service routine
-    RTKSetIRQStack(pi->irq_val, 1024);
-    RTInstallSharedIRQHandlerEx(pi->irq_val, (RTKIRQHandlerEx)i82559_interrupt, sc);
-
 	/****************************************/
-	RTKIRQTopPriority(pi->irq_val, 8);
-	RTKSetIRQStack(pi->irq_val, 65536);
+	if (pi->minor_number == SURZA_LINK_DEVICE) {
+		FPUContext = calloc(_rtkFLTDataSize(), 1);
+
+		RTKSetIRQStack(pi->irq_val, 65536);
+		RTInstallSharedIRQHandlerEx(pi->irq_val, (RTKIRQHandlerEx)i82559_interrupt_custom, sc);
+		RTKIRQTopPriority(pi->irq_val, 8);
+
+		surza_irq = pi->irq_val;
+	}
+	else {
+		// hook the interrupt service routine
+		RTKSetIRQStack(pi->irq_val, 1024);
+		RTInstallSharedIRQHandlerEx(pi->irq_val, (RTKIRQHandlerEx)i82559_interrupt, sc);
+	}
 	/*************************************/
 
     if (!i82559_init_rcv_ring(sc))
@@ -456,7 +474,7 @@ static RTIP_BOOLEAN i82559_open(PIFACE pi)
 
 
 	/**********/
-	if (pi->minor_number == SURZA_IFACE_N) {
+	if (pi->minor_number == SURZA_LINK_DEVICE) {
 		save_pi = pi;
 		my_dcu = os_alloc_packet(ETHERSIZE, DRIVER_ALLOC);
 		frame_header = DCUTODATA(my_dcu);
@@ -729,7 +747,7 @@ static void i82559_close(PIFACE pi)                     //__fn__
 {
 
 	/*************/
-	if (pi->minor_number == SURZA_IFACE_N) {
+	if (pi->minor_number == SURZA_LINK_DEVICE) {
 		os_free_packet(my_dcu);
 	}
 	/************/
@@ -924,6 +942,17 @@ static int i82559_interrupt(PI82559_SOFTC sc)
     return 1;
 }
 
+
+static int i82559_interrupt_custom(PI82559_SOFTC sc) {
+	_rtkFLTSave(FPUContext);
+
+	int res = i82559_interrupt(sc);
+
+	_rtkFLTRestore(FPUContext);
+	return res;
+}
+
+
 // ********************************************************************
 static word i82559_mdio_read(PI82559_SOFTC sc, int offset)
 {
@@ -1029,7 +1058,9 @@ static void i82559_rcv_ring(PI82559_SOFTC sc)
     dword length;
     DCU  msg, invoke_msg;
 
-	char surza_iface = (sc->iface->minor_number == SURZA_IFACE_N) ? 1 : 0;
+	/*************************************************************************/
+	char surza_iface = (sc->iface->minor_number == SURZA_LINK_DEVICE) ? 1 : 0;
+	/*************************************************************************/
 
     while (1)
     {
@@ -1066,10 +1097,10 @@ static void i82559_rcv_ring(PI82559_SOFTC sc)
 
 				if (surza_iface && ((struct _ether*)pthisbd->buffer)->eth_type==0x2211 ) {
 					/**************/
-					extern unsigned NewSurzaFrame(const void* data_in, unsigned bytes, void* data_out);
+					extern unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out);
 					const unsigned char* in_frame = (const unsigned char*)pthisbd->buffer;
 					memcpy(frame_header, &in_frame[6], 6);
-					SendFrameRaw(NewSurzaFrame(in_frame + sizeof(struct _ether), length - sizeof(struct _ether), frame_header + sizeof(struct _ether)));
+					SendFrameRaw(SurzaFrameCallback(in_frame + sizeof(struct _ether), length - sizeof(struct _ether), frame_header + sizeof(struct _ether)));
 					/***************/
 				}
 				else {
@@ -1099,26 +1130,6 @@ static void i82559_rcv_ring(PI82559_SOFTC sc)
 						sc->stats.bytes_in += length - sizeof(struct _ether);
 						DCUTOPACKET(invoke_msg)->length = length;
 						ks_invoke_input(sc->iface, invoke_msg);
-						/********************/
-						/*
-						extern EPACKET dcus[10];
-						extern volatile int dcus_cnt;
-						extern char dcu_data[10][1600];
-						if (dcus_cnt < 10) {
-							memcpy(&dcus[dcus_cnt], invoke_msg, sizeof(EPACKET));
-							memcpy(&dcu_data[dcus_cnt][0], (const void*)pthisbd->buffer, length);
-							dcus_cnt++;
-						}
-						*/
-
-						/*
-						extern unsigned NewSurzaFrame(const void* data_in, unsigned bytes, void* data_out);
-						unsigned char* in_frame = DCUTODATA(sc->rx_dcus[sc->cur_rx]);
-						memcpy(frame_header, &in_frame[6], 6);
-						SendFrameRaw(NewSurzaFrame(in_frame+sizeof(struct _ether), length - sizeof(struct _ether), frame_header+sizeof(struct _ether)));
-						*/
-
-						/*********************/
 					}
 					else
 					{

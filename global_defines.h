@@ -17,3 +17,6 @@
 
 //включение отладки page fault
 #define  _CPU_EXCEPTION_14_DEBUG
+
+//плата CPC150
+#define CPC150
