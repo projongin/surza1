@@ -311,6 +311,7 @@ static bool init_steptime();
 static bool init_shu();
 static bool init_commands();
 static bool init_isa();
+static bool init_ethernet();
 
 
 int logic_init() {
@@ -425,6 +426,11 @@ int logic_init() {
 				break;
 			}
 
+			//Инициализация работы с ethernet
+			if (!init_ethernet()) {
+				LOG_AND_SCREEN("Logic ethernet init failed!");
+				break;
+			}
 
 			ok = true;
 			break;
@@ -518,6 +524,7 @@ static unsigned math_bool_out_num;
 
 
 
+
 //------------------------------------------------------------------------
 //  Основные таблицы
 //------------------------------------------------------------------------
@@ -535,6 +542,11 @@ static unsigned math_bool_out_num;
 #define LOGIC_TYPE_REAL_OUT   3
 #define LOGIC_TYPE_INT_OUT    4
 #define LOGIC_TYPE_BOOL_OUT   5
+#define LOGIC_TYPE_MAX_LIMITER  6
+
+
+static unsigned math_type_data_num[LOGIC_TYPE_MAX_LIMITER];  //тоже самое, но массивом для автоматической проверки по всем типам
+static uint8_t* math_type_data_ptr[LOGIC_TYPE_MAX_LIMITER];  //тоже самое, но массивом
 
 
 static bool init_math() {
@@ -552,6 +564,11 @@ static bool init_math() {
 	math_real_out_num = 0;
 	math_int_out_num = 0;
 	math_bool_out_num = 0;
+
+	for (unsigned i = 0; i < LOGIC_TYPE_MAX_LIMITER; i++) {
+		math_type_data_num[i] = 0;
+		math_type_data_ptr[i] = NULL;
+	}
 
 
 	param_tree_node_t* common_node = ParamTree_Find(ParamTree_MainNode(), "MAIN_TABLES", PARAM_TREE_SEARCH_NODE);
@@ -571,6 +588,8 @@ static bool init_math() {
 		}
 		math_real_in = &MATH_IO_REAL_IN[0];
 		math_real_in_num = cnt;
+		math_type_data_num[LOGIC_TYPE_REAL_IN] = cnt;
+		math_type_data_ptr[LOGIC_TYPE_REAL_IN] = (uint8_t*)math_real_in;
 	}
 
 	node = ParamTree_Find(common_node, "IN_INT", PARAM_TREE_SEARCH_NODE);
@@ -582,6 +601,8 @@ static bool init_math() {
 		}
 		math_int_in = &MATH_IO_INT_IN[0];
 		math_int_in_num = cnt;
+		math_type_data_num[LOGIC_TYPE_INT_IN] = cnt;
+		math_type_data_ptr[LOGIC_TYPE_INT_IN] = (uint8_t*)math_int_in;
 	}
 
 	node = ParamTree_Find(common_node, "IN_BOOL", PARAM_TREE_SEARCH_NODE);
@@ -593,6 +614,8 @@ static bool init_math() {
 		}
 		math_bool_in = &MATH_IO_BOOL_IN[0];
 		math_bool_in_num = cnt;
+		math_type_data_num[LOGIC_TYPE_BOOL_IN] = cnt;
+		math_type_data_ptr[LOGIC_TYPE_BOOL_IN] = (uint8_t*)math_bool_in;
 	}
 
 	node = ParamTree_Find(common_node, "OUT_REAL", PARAM_TREE_SEARCH_NODE);
@@ -604,6 +627,8 @@ static bool init_math() {
 		}
 		math_real_out = &MATH_IO_REAL_OUT[0];
 		math_real_out_num = cnt;
+		math_type_data_num[LOGIC_TYPE_REAL_OUT] = cnt;
+		math_type_data_ptr[LOGIC_TYPE_REAL_OUT] = (uint8_t*)math_real_out;
 	}
 
 	node = ParamTree_Find(common_node, "OUT_INT", PARAM_TREE_SEARCH_NODE);
@@ -615,6 +640,8 @@ static bool init_math() {
 		}
 		math_int_out = &MATH_IO_INT_OUT[0];
 		math_int_out_num = cnt;
+		math_type_data_num[LOGIC_TYPE_INT_OUT] = cnt;
+		math_type_data_ptr[LOGIC_TYPE_INT_OUT] = (uint8_t*)math_int_out;
 	}
 
 	node = ParamTree_Find(common_node, "OUT_BOOL", PARAM_TREE_SEARCH_NODE);
@@ -626,6 +653,8 @@ static bool init_math() {
 		}
 		math_bool_out = &MATH_IO_BOOL_OUT[0];
 		math_bool_out_num = cnt;
+		math_type_data_num[LOGIC_TYPE_BOOL_OUT] = cnt;
+		math_type_data_ptr[LOGIC_TYPE_BOOL_OUT] = (uint8_t*)math_bool_out;
 	}
 
 
@@ -4017,27 +4046,51 @@ static void commands_apply() {
 //------------------------------------------------------------------------
 //  Измеритель шага
 //------------------------------------------------------------------------
+#define STEPTIME_CPU_FREQUENCY_MHZ  500  // используется как делитель для пересчета значений процессорного таймера TSC в микросекунды
+
 static bool steptime_init_ok = false;
+
 static unsigned steptime_adr;
 static unsigned steptime_input;
 static unsigned steptime_time;
+
+#define STEPTIME_DISABLE  0
+#define STEPTIME_FIU      1
+#define STEPTIME_INTERNAL 2
+static unsigned steptime_type;  //тип используемого измерителя
+
+uint64_t tsc_reg_start, tsc_reg_stop;
 
 static bool init_steptime(){
 
 	steptime_init_ok = false;
 
 	steptime_time = 0;
+	steptime_type = STEPTIME_DISABLE;
 
 	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "TIME_CHECK", PARAM_TREE_SEARCH_NODE);
-	if (!node)   
+	if (!node) {
 		return true;  //измеритель шага не используется
+	}
 
 
 	param_tree_node_t* item;
 
-	item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
-	if (item && item->value) {
-		sscanf_s(item->value, "%u", &steptime_adr);
+	item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+	if (item && item->value && sscanf_s(item->value, "%u", &steptime_type) > 0){
+		if (steptime_type != STEPTIME_DISABLE && steptime_type != STEPTIME_FIU && steptime_type != STEPTIME_INTERNAL)
+			return false;
+	} else {
+		steptime_type = STEPTIME_DISABLE;
+		return true;
+	}
+	
+
+	if (steptime_type == STEPTIME_FIU) {
+		item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			sscanf_s(item->value, "%u", &steptime_adr);
+		}
 	}
 
 
@@ -4053,14 +4106,32 @@ static bool init_steptime(){
 
 }
 
+//запуск внутреннего измерителя времени такта
+static void steptime_start_check() {
+
+	if (!steptime_init_ok)
+		return;
+
+	if (steptime_type == STEPTIME_INTERNAL) {
+		//старт внутреннего измерителя
+		tsc_reg_start = get_cpu_clks_64();
+	}
+}
+
+
+
 //получение времени такта
 static void steptime_update() {
 
 	if (!steptime_init_ok)
 		return;
 
-
-	steptime_time = RTInW(steptime_adr);
+	if (steptime_type == STEPTIME_FIU)
+	   steptime_time = RTInW(steptime_adr);  //измеритель фиу
+	else {
+		//внутренний измеритель
+		tsc_reg_stop = get_cpu_clks_64() - tsc_reg_start;
+	}
 	
 }
 
@@ -4070,9 +4141,14 @@ static void steptime_copy() {
 	if (!steptime_init_ok)
 		return;
 
-	unsigned steptime_us = steptime_time / 50;
-
-	MATH_IO_INT_IN[steptime_input] = steptime_us;
+	if (steptime_type == STEPTIME_FIU) {
+		int steptime_us = (int)(steptime_time / 50);
+		MATH_IO_INT_IN[steptime_input] = steptime_us;
+	}
+	else {
+		//для внутреннего измерителя
+		MATH_IO_INT_IN[steptime_input] = (int)(tsc_reg_stop/STEPTIME_CPU_FREQUENCY_MHZ);
+	}
 
 }
 
@@ -4473,6 +4549,349 @@ static void isa_write() {
 
 
 
+//------------------------------------------------------------------------
+//  Работа с ETHERNET
+//------------------------------------------------------------------------
+
+#define ETHERNET_CHECK_FLOAT   1  // 0/1 ВЫКЛ ВКЛ проверку корректности данных типа float
+
+#define ETHERNET_MAX_DATA      1500   //максимальнео допустимое кол-во данных в сообщении  (ETHERSIZE - sizeof(struct _ether)  в rtip.h)
+
+bool ethernet_en;
+
+enum ethernet_data_type {
+	ETH_FLOAT = 0,
+	ETH_BOOL,
+	ETH_INT8,
+	ETH_UINT8,
+	ETH_INT16,
+	ETH_UINT16,
+	ETH_INT32,
+	ETH_MAX_LIMITER
+};
+
+unsigned ethernet_type_size(enum ethernet_data_type type) {
+	unsigned size = 0;
+	switch (type) {
+	case ETH_FLOAT:
+	case ETH_INT32:	size = 4; break;
+	case ETH_INT16:
+	case ETH_UINT16: size = 2; break;
+	case ETH_BOOL:
+	case ETH_INT8:
+	case ETH_UINT8: size = 1; break;	
+	default: break;
+	}
+	return size;
+}
+
+
+typedef struct {
+	unsigned logic_type;
+	uint8_t* logic_data_ptr;
+	unsigned msg_offset;
+	enum ethernet_data_type msg_type;
+} ethernet_table_t;
+
+ethernet_table_t*  ethernet_input_table;
+ethernet_table_t*  ethernet_output_table;
+
+unsigned ethernet_input_table_size;  //количество записей в таблицах
+unsigned ethernet_output_table_size;
+
+unsigned ethernet_input_max;    //максимальный кол-во байт, забираемых их сообщения (максимальное смещение+1) для проверки вылезания за пределы принятого сообщения
+unsigned ethernet_output_max;   //максимальный кол-во байт, передаваемых в сообщение (максимальное смещение+1) для понимания сколько отправлять байт
+
+
+static bool init_ethernet() {
+
+	ethernet_en = false;
+
+
+	ethernet_input_table_size = 0;
+	ethernet_output_table_size = 0;
+
+	ethernet_input_max = 0;
+	ethernet_output_max = 0;
+
+
+	param_tree_node_t* eth_node = ParamTree_Find(ParamTree_MainNode(), "ETHERNET", PARAM_TREE_SEARCH_NODE);
+	if (!eth_node)
+		return true;
+
+
+	param_tree_node_t* input_node = ParamTree_Find(eth_node, "INPUT", PARAM_TREE_SEARCH_NODE);
+	if (input_node) {
+
+		//определение количества записей
+		ethernet_input_table_size = ParamTree_ChildNum(input_node);
+		if (ethernet_input_table_size) {
+
+			//выделение памяти под таблицу
+			ethernet_input_table = (ethernet_table_t*)malloc(sizeof(ethernet_table_t)*ethernet_input_table_size);
+			if (ethernet_input_table) {
+
+				//получение данных
+				param_tree_node_t* node;
+				param_tree_node_t* item;
+				bool err = false;
+				unsigned u32, cnt = 0;
+				ethernet_table_t* ptr = ethernet_input_table;
+
+				for (node = ParamTree_Child(input_node); node && !err && cnt<ethernet_input_table_size; node = node->next, ptr++) {
+
+
+					item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+					if (!item || !item->value)	err = true;
+					else if (sscanf_s(item->value, "%u", &u32) <= 0 || !(u32 == LOGIC_TYPE_REAL_IN || u32 == LOGIC_TYPE_INT_IN || u32 == LOGIC_TYPE_BOOL_IN)) err = true;
+					else ptr->logic_type = u32;
+
+					if (!err) {
+						item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_type_data_num[ptr->logic_type]) err = true;
+						else ptr->logic_data_ptr = (uint8_t*)&math_type_data_ptr[ptr->logic_type][u32];
+					}
+
+					if (!err) {
+						item = ParamTree_Find(node, "data_type", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= ETH_MAX_LIMITER) err = true;
+						else ptr->msg_type = (enum ethernet_data_type) u32;
+					}
+
+
+					if (!err) {
+						item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0
+							||	(ptr->msg_type==ETH_BOOL?u32/8:u32) + ethernet_type_size(ptr->msg_type) > ETHERNET_MAX_DATA ) err = true;
+						else ptr->msg_offset = u32;
+					}
+
+					//поиск максимального смещения
+					if (!err) {
+						unsigned max_byte = (ptr->msg_type == ETH_BOOL ? u32 / 8 : u32) + ethernet_type_size(ptr->msg_type);
+						if (max_byte > ethernet_input_max)
+							ethernet_input_max = max_byte;
+					}
+					
+				}
+
+				if (err) {
+					free(ethernet_input_table);
+					ethernet_input_table_size = 0;
+					return false;
+				}
+
+			}
+			else
+				ethernet_input_table_size = 0;
+
+		}
+
+	}
+
+
+	param_tree_node_t* output_node = ParamTree_Find(eth_node, "OUTPUT", PARAM_TREE_SEARCH_NODE);
+	if (output_node) {
+
+		//определение количества записей
+		ethernet_output_table_size = ParamTree_ChildNum(output_node);
+		if (ethernet_output_table_size) {
+
+			//выделение памяти под таблицу
+			ethernet_output_table = (ethernet_table_t*)malloc(sizeof(ethernet_table_t)*ethernet_output_table_size);
+			if (ethernet_output_table) {
+
+				//получение данных
+				param_tree_node_t* node;
+				param_tree_node_t* item;
+				bool err = false;
+				unsigned u32, cnt = 0;
+				ethernet_table_t* ptr = ethernet_output_table;
+
+				for (node = ParamTree_Child(output_node); node && !err && cnt<ethernet_output_table_size; node = node->next, ptr++) {
+
+					item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+					if (!item || !item->value)	err = true;
+					else if (sscanf_s(item->value, "%u", &u32) <= 0 || !(u32 == LOGIC_TYPE_REAL_OUT || u32 == LOGIC_TYPE_INT_OUT || u32 == LOGIC_TYPE_BOOL_OUT)) err = true;
+					else ptr->logic_type = u32;
+
+					if (!err) {
+						item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_type_data_num[ptr->logic_type]) err = true;
+						else ptr->logic_data_ptr = (uint8_t*)&math_type_data_ptr[ptr->logic_type][u32];
+					}
+
+					if (!err) {
+						item = ParamTree_Find(node, "data_type", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= ETH_MAX_LIMITER) err = true;
+						else ptr->msg_type = (enum ethernet_data_type) u32;
+					}
+
+
+					if (!err) {
+						item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
+						if (!item || !item->value)	err = true;
+						else if (sscanf_s(item->value, "%u", &u32) <= 0
+							|| (ptr->msg_type == ETH_BOOL ? u32 / 8 : u32) + ethernet_type_size(ptr->msg_type) > ETHERNET_MAX_DATA) err = true;
+						else ptr->msg_offset = u32;
+					}
+
+					//поиск максимального смещения
+					if (!err) {
+						unsigned max_byte = (ptr->msg_type == ETH_BOOL ? u32 / 8 : u32) + ethernet_type_size(ptr->msg_type);
+						if (max_byte > ethernet_output_max)
+							ethernet_output_max = max_byte;
+					}
+
+				}
+
+				if (err) {
+					free(ethernet_output_table);
+					ethernet_output_table_size = 0;
+					return false;
+				}
+
+			}
+			else
+				ethernet_output_table_size = 0;
+
+		}
+
+	}
+
+	ethernet_en = true;
+	return true;
+}
+
+#define ETH_PTR_IN   ((uint8_t*)data_in + ptr->msg_offset)
+#define ETH_PTR_OUT  ((uint8_t*)data_out + ptr->msg_offset)
+
+
+static void ethernet_input(const void* data_in, unsigned bytes) {
+
+	if (!ethernet_en)
+		return;
+
+	if (bytes < ethernet_input_max)  //некорректная длина сообщения (не соответствует заданным настройкам)
+		return;
+
+	float f32;
+	int32_t i32;
+
+	ethernet_table_t* ptr = ethernet_input_table;
+	for (unsigned i = 0; i < ethernet_input_table_size; i++, ptr++) {
+
+		switch (ptr->msg_type) {
+			case ETH_FLOAT:
+				f32 = *(float*)ETH_PTR_IN;
+                #if ETHERNET_CHECK_FLOAT == 1
+				if (!_finite(f32))
+					continue;
+                #endif
+				break;
+			case ETH_INT32:	 i32 = *(int32_t*)ETH_PTR_IN; break;
+			case ETH_INT16:  i32 = (int32_t) *(int16_t*)ETH_PTR_IN; break;
+			case ETH_UINT16: i32 = (int32_t) *(uint16_t*)ETH_PTR_IN; break;
+			case ETH_INT8:   i32 = (int32_t) *(int8_t*)ETH_PTR_IN; break;
+			case ETH_UINT8:  i32 = (int32_t) *(uint8_t*)ETH_PTR_IN; break;
+			case ETH_BOOL:   i32 = (int32_t) *((uint8_t*)data_in + ptr->msg_offset/8);
+			                 i32 = (i32 >> (ptr->msg_offset & 0x07)) & 0x01;
+						     break;
+			default: continue;
+		}
+
+
+		if (ptr->msg_type == ETH_FLOAT) {
+			switch (ptr->logic_type) {
+			case LOGIC_TYPE_REAL_IN: *(float*)ptr->logic_data_ptr = f32; break;
+			case LOGIC_TYPE_INT_IN:  if(f32 > (float)(INT32_MAX)) *(int32_t*)ptr->logic_data_ptr = INT32_MAX;
+									 else if(f32 < (float)(INT32_MIN)) *(int32_t*)ptr->logic_data_ptr = INT32_MIN;
+									 else *(int32_t*)ptr->logic_data_ptr = (int32_t)f32;
+									 break;
+			case LOGIC_TYPE_BOOL_IN: *(boolean_T*)ptr->logic_data_ptr = (f32 == 0 ? false : true); break;
+			default: break;
+			}
+		} else {
+			switch (ptr->logic_type) {
+			case LOGIC_TYPE_REAL_IN: *(float*)ptr->logic_data_ptr = (float)i32; break;
+			case LOGIC_TYPE_INT_IN:	*(int32_t*)ptr->logic_data_ptr = i32; break;
+			case LOGIC_TYPE_BOOL_IN: *(boolean_T*)ptr->logic_data_ptr = (i32 ? false : true); break;
+			default: break;
+			}
+		}
+
+	}
+
+}
+
+static unsigned ethernet_output(void* data_out) {
+
+	if (!ethernet_en)
+		return 0;
+
+
+	float f32;
+	int32_t i32;
+
+	ethernet_table_t* ptr = ethernet_output_table;
+	for (unsigned i = 0; i < ethernet_output_table_size; i++, ptr++) {
+
+		if (ptr->msg_type == ETH_FLOAT) {
+			switch (ptr->logic_type) {
+			case LOGIC_TYPE_REAL_OUT: f32 = *(float*)ptr->logic_data_ptr; break;
+			case LOGIC_TYPE_INT_OUT:  f32 = (float) *(int32_t*)ptr->logic_data_ptr; break;
+			case LOGIC_TYPE_BOOL_OUT: f32 = (*(boolean_T*)ptr->logic_data_ptr) ? 1.0f : 0.0f; break;
+			default: continue;
+			}
+		}
+		else {
+			switch (ptr->logic_type) {
+			case LOGIC_TYPE_REAL_OUT:  f32 = *(float*)ptr->logic_data_ptr; break;
+				                       if (f32 > (float)(INT32_MAX)) i32 = INT32_MAX;
+									   else if (f32 < (float)(INT32_MAX)) i32 = INT32_MIN;
+									   else i32 = (int32_t)f32;
+									   break;
+			case LOGIC_TYPE_INT_OUT:   i32 = *(int32_t*)ptr->logic_data_ptr; break;
+			case LOGIC_TYPE_BOOL_OUT:  i32 = (*(boolean_T*)ptr->logic_data_ptr) ? 1 : 0; break;
+			default: continue;
+			}
+		}
+
+
+		switch (ptr->msg_type) {
+		case ETH_FLOAT:  *(float*)ETH_PTR_OUT = f32; break;
+		case ETH_INT32:	 *(int32_t*)ETH_PTR_OUT = i32; break;
+		case ETH_INT16:  if(i32>INT16_MAX) *(int16_t*)ETH_PTR_OUT = INT16_MAX;
+						 else if (i32<INT16_MIN) *(int16_t*)ETH_PTR_OUT = INT16_MIN;
+						 else *(int16_t*)ETH_PTR_OUT = (int16_t)i32;
+						 break;
+		case ETH_UINT16: if (i32>UINT16_MAX) *(uint16_t*)ETH_PTR_OUT = UINT16_MAX;
+						 else if (i32<0) *(uint16_t*)ETH_PTR_OUT = 0;
+						 else *(uint16_t*)ETH_PTR_OUT = (uint16_t)i32;
+						 break;
+		case ETH_INT8:   if (i32>INT8_MAX) *(int8_t*)ETH_PTR_OUT = INT8_MAX;
+						 else if (i32<INT8_MIN) *(int8_t*)ETH_PTR_OUT = INT8_MIN;
+						 else *(int8_t*)ETH_PTR_OUT = (int8_t)i32;
+						 break;
+		case ETH_UINT8:  if (i32>UINT8_MAX) *(uint8_t*)ETH_PTR_OUT = UINT8_MAX;
+						 else if (i32<0) *(uint8_t*)ETH_PTR_OUT = 0;
+						 else *(uint8_t*)ETH_PTR_OUT = (uint8_t)i32;
+						 break;
+		case ETH_BOOL:   *((uint8_t*)data_out + ptr->msg_offset / 8) |= (i32 ? (0x01 << (ptr->msg_offset & 0x07)) : 0x00); break;
+		default: continue;
+		}
+
+	}
+
+	return ethernet_output_max;
+}
+
+//------------------------------------------------------------------------
 
 
 
@@ -4808,7 +5227,7 @@ void speed_test() {
 
 unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out) {
 
-	unsigned send_bytes = 0;
+	//
 
 	//обновление собаки
 	wdt_update();
@@ -4826,8 +5245,6 @@ unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out
 
 	//dic_read();
 
-	DEBUG_ADD_POINT(23);
-
 	set_inputs();
 
 	steptime_copy();
@@ -4838,11 +5255,17 @@ unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out
 
 	isa_read();
 
+	DEBUG_ADD_POINT(23);
+
+	ethernet_input(data_in, bytes);
+
 	// ====== вызов МЯДа  ==================
 	DEBUG_ADD_POINT(24);
     MYD_step();
 	DEBUG_ADD_POINT(25);
 	// =====================================
+
+	unsigned send_bytes = ethernet_output(data_out);
 
 	DEBUG_ADD_POINT(26);
 	//dic_write();
@@ -4876,7 +5299,7 @@ unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out
 
 
 
-
+//для теста задержки на передачу
 volatile unsigned test_cnt = 0;
 volatile uint8_t test_data = 0;
 
@@ -4897,3 +5320,4 @@ unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out)
 	return 0;
 
 }
+//-----------------------------------------

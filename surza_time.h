@@ -36,3 +36,5 @@ surza_time_t SurzaTime_sub(surza_time_t time, uint64_t nsecs);
 
 //получение счетчика тактов процессора (использовать только если одно ядро и нет динамического изменения частоты процессора, иначе надо делать по другому)
 int __stdcall get_cpu_clks();
+
+uint64_t __stdcall get_cpu_clks_64();
