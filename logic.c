@@ -4147,7 +4147,7 @@ static void steptime_copy() {
 	}
 	else {
 		//для внутреннего измерителя
-		MATH_IO_INT_IN[steptime_input] = (int)(tsc_reg_stop/STEPTIME_CPU_FREQUENCY_MHZ);
+		MATH_IO_INT_IN[steptime_input] = (int32_t)(tsc_reg_stop/STEPTIME_CPU_FREQUENCY_MHZ);
 	}
 
 }
@@ -4646,11 +4646,12 @@ static bool init_ethernet() {
 					else if (sscanf_s(item->value, "%u", &u32) <= 0 || !(u32 == LOGIC_TYPE_REAL_IN || u32 == LOGIC_TYPE_INT_IN || u32 == LOGIC_TYPE_BOOL_IN)) err = true;
 					else ptr->logic_type = u32;
 
+
 					if (!err) {
 						item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
 						if (!item || !item->value)	err = true;
 						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_type_data_num[ptr->logic_type]) err = true;
-						else ptr->logic_data_ptr = (uint8_t*)&math_type_data_ptr[ptr->logic_type][u32];
+						else ptr->logic_data_ptr = math_type_data_ptr[ptr->logic_type] + u32*(ptr->logic_type==LOGIC_TYPE_BOOL_IN?1:4);
 					}
 
 					if (!err) {
@@ -4722,7 +4723,7 @@ static bool init_ethernet() {
 						item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
 						if (!item || !item->value)	err = true;
 						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_type_data_num[ptr->logic_type]) err = true;
-						else ptr->logic_data_ptr = (uint8_t*)&math_type_data_ptr[ptr->logic_type][u32];
+						else ptr->logic_data_ptr = math_type_data_ptr[ptr->logic_type] + u32 * (ptr->logic_type == LOGIC_TYPE_BOOL_OUT ? 1 : 4);
 					}
 
 					if (!err) {
@@ -4882,7 +4883,11 @@ static unsigned ethernet_output(void* data_out) {
 						 else if (i32<0) *(uint8_t*)ETH_PTR_OUT = 0;
 						 else *(uint8_t*)ETH_PTR_OUT = (uint8_t)i32;
 						 break;
-		case ETH_BOOL:   *((uint8_t*)data_out + ptr->msg_offset / 8) |= (i32 ? (0x01 << (ptr->msg_offset & 0x07)) : 0x00); break;
+		case ETH_BOOL:   if (i32)
+			                 *((uint8_t*)data_out + ptr->msg_offset / 8)  |= (0x01 << (ptr->msg_offset & 0x07));
+						 else
+							 *((uint8_t*)data_out + ptr->msg_offset / 8) &= ~(0x01 << (ptr->msg_offset & 0x07));
+						 break;
 		default: continue;
 		}
 
@@ -5225,15 +5230,16 @@ void speed_test() {
 
 //основная периодическая функция сурзы
 
-unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out) {
+unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out) {
 
-	//
+	//запуск измерения времени
+	steptime_start_check();
 
 	//обновление собаки
 	wdt_update();
 
 	//запуск основной функции логики
-	if (init_flags.logic_init)
+	if (!init_flags.logic_init)
 		return 0;
 
 	DEBUG_ADD_POINT(21);
@@ -5303,7 +5309,7 @@ unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out
 volatile unsigned test_cnt = 0;
 volatile uint8_t test_data = 0;
 
-unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out) {
+unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out) {
 
 	wdt_update();
 
