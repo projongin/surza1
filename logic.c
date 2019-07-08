@@ -119,7 +119,8 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 
     
 	LOG_AND_SCREEN("Reboot...");
-	reboot();
+	//reboot();
+	RTReboot();
 }
 
 
@@ -293,7 +294,8 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 
 
 	LOG_AND_SCREEN("Reboot...");
-	reboot();
+	//reboot();
+	RTReboot();
 }
 
 

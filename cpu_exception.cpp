@@ -111,7 +111,14 @@ void cpu_exception_init() {
 
 	//----------------------------------------------------------
 
-	RTRaiseCPUException(14);
+	RTRaiseCPUException(0);  // divide error 
+	RTRaiseCPUException(4);  // INTO Overflow 
+	RTRaiseCPUException(5);  // range check 
+	RTRaiseCPUException(6);  // invalid opcode 
+	RTRaiseCPUException(13); // GPF 
+	RTRaiseCPUException(14); // page fault 
+	RTRaiseCPUException(16); // floating point error 
+
 	RTSetExitHandler(debug_handler);
 
 
