@@ -95,7 +95,7 @@ int  main(int argc, char * argv[])
 	RTKDisableIRQ(1);
 
 	
-#ifdef CPU_EXCEPTION_14_DEBUG
+#ifdef CPU_EXCEPTION_DEBUG
 	cpu_exception_init();
 #endif
 
