@@ -172,7 +172,31 @@ void common_init() {
 //----------------------------------------------------------
 
 static volatile bool allow_update;
+#ifdef CPC150
+void wdt_init() {
+	allow_update = true;
+#ifdef WDT_EN
+	RTOut(0x24f, 0x03); // WDT On
+#endif
+}
 
+inline void wdt_update() {
+#ifdef WDT_EN
+	static bool edge = false;
+	edge = edge ? false : true;
+
+	if (allow_update)
+		RTOut(0x24f, edge ? 0x01 : 0x03);
+#endif
+}
+
+
+void reboot() {
+	allow_update = false;
+	RTOut(0x24f, 0x03); //принудительно включить собаку
+	while (true);
+}
+#else 
 void wdt_init() {
 	allow_update = true;
 #ifdef WDT_EN
@@ -193,5 +217,4 @@ void reboot() {
 	RTOut(0x20C, 0x01); //принудительно включить собаку
 	while (true);
 }
-
-
+#endif

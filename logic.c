@@ -299,6 +299,8 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 }
 
 
+void steptime_start_check();
+
 
 static bool init_math();
 static bool init_adc();
@@ -947,10 +949,12 @@ bool init_adc() {
 
 
 
-
 void adc_irq_handler(void){
 
 	DEBUG_ADD_POINT(20);
+
+	//запуск измерения времени (для встроенного измерителя)
+	steptime_start_check();
 
 	//запуск второго ацп
 	if(adc_num>1)
@@ -3983,31 +3987,55 @@ static void commands_apply() {
 
 
 
-
 //------------------------------------------------------------------------
 //  Измеритель шага
 //------------------------------------------------------------------------
+#define STEPTIME_CPU_FREQUENCY_MHZ  500  // используется как делитель для пересчета значений процессорного таймера TSC в микросекунды
+
 static bool steptime_init_ok = false;
+
 static unsigned steptime_adr;
 static unsigned steptime_input;
 static unsigned steptime_time;
 
-static bool init_steptime(){
+#define STEPTIME_DISABLE  0
+#define STEPTIME_FIU      1
+#define STEPTIME_INTERNAL 2
+static unsigned steptime_type;  //тип используемого измерителя
+
+uint64_t tsc_reg_start, tsc_reg_stop;
+
+static bool init_steptime() {
 
 	steptime_init_ok = false;
 
 	steptime_time = 0;
+	steptime_type = STEPTIME_DISABLE;
 
 	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "TIME_CHECK", PARAM_TREE_SEARCH_NODE);
-	if (!node)   
+	if (!node) {
 		return true;  //измеритель шага не используется
+	}
 
 
 	param_tree_node_t* item;
 
-	item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
-	if (item && item->value) {
-		sscanf_s(item->value, "%u", &steptime_adr);
+	item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
+	if (item && item->value && sscanf_s(item->value, "%u", &steptime_type) > 0) {
+		if (steptime_type != STEPTIME_DISABLE && steptime_type != STEPTIME_FIU && steptime_type != STEPTIME_INTERNAL)
+			return false;
+	}
+	else {
+		steptime_type = STEPTIME_DISABLE;
+		return true;
+	}
+
+
+	if (steptime_type == STEPTIME_FIU) {
+		item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
+		if (item && item->value) {
+			sscanf_s(item->value, "%u", &steptime_adr);
+		}
 	}
 
 
@@ -4016,12 +4044,26 @@ static bool init_steptime(){
 	if (sscanf_s(item->value, "%u", &steptime_input) <= 0) return false;
 	if (steptime_input >= math_int_in_num) return false;
 
-	
+
 	steptime_init_ok = true;
 
 	return true;
 
 }
+
+//запуск внутреннего измерителя времени такта
+static void steptime_start_check() {
+
+	if (!steptime_init_ok)
+		return;
+
+	if (steptime_type == STEPTIME_INTERNAL) {
+		//старт внутреннего измерителя
+		tsc_reg_start = get_cpu_clks_64();
+	}
+}
+
+
 
 //получение времени такта
 static void steptime_update() {
@@ -4029,9 +4071,13 @@ static void steptime_update() {
 	if (!steptime_init_ok)
 		return;
 
+	if (steptime_type == STEPTIME_FIU)
+		steptime_time = RTInW(steptime_adr);  //измеритель фиу
+	else {
+		//внутренний измеритель
+		tsc_reg_stop = get_cpu_clks_64() - tsc_reg_start;
+	}
 
-	steptime_time = RTInW(steptime_adr);
-	
 }
 
 //копирование времени такта в МЯД
@@ -4040,11 +4086,17 @@ static void steptime_copy() {
 	if (!steptime_init_ok)
 		return;
 
-	unsigned steptime_us = steptime_time / 50;
-
-	MATH_IO_INT_IN[steptime_input] = steptime_us;
+	if (steptime_type == STEPTIME_FIU) {
+		int steptime_us = (int)(steptime_time / 50);
+		MATH_IO_INT_IN[steptime_input] = steptime_us;
+	}
+	else {
+		//для внутреннего измерителя
+		MATH_IO_INT_IN[steptime_input] = (int32_t)(tsc_reg_stop / STEPTIME_CPU_FREQUENCY_MHZ);
+	}
 
 }
+
 
 
 

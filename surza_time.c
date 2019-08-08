@@ -426,3 +426,7 @@ int __stdcall get_cpu_clks() {
 	}
 }
 
+
+uint64_t __stdcall get_cpu_clks_64() {
+	__asm rdtsc
+}

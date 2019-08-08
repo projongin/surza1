@@ -32,3 +32,5 @@
 #define DELTA_HMI_ENABLE
 
 
+//плата CPC150
+#define _CPC150
