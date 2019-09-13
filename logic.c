@@ -5304,7 +5304,7 @@ unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out)
 }
 
 
-
+#if 0
 //для теста задержки на передачу
 volatile unsigned test_cnt = 0;
 volatile uint8_t test_data = 0;
@@ -5327,3 +5327,4 @@ unsigned _SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out
 
 }
 //-----------------------------------------
+#endif

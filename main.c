@@ -255,6 +255,7 @@ int  main(int argc, char * argv[])
 
 
 
+#if 0
 			/*****************************/
 			/*
 			time = RTKGetTime();
@@ -277,6 +278,7 @@ int  main(int argc, char * argv[])
 				}
 			}
 			/********************************/
+#endif
 
 
 #if 0
