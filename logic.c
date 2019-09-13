@@ -1003,6 +1003,7 @@ void adc_irq_handler(void){
 //------------------------------------------------------------------------
 //  DIC
 //------------------------------------------------------------------------
+static bool dic_en;
 
 static unsigned dic_adr;
 
@@ -1021,26 +1022,12 @@ static const uint8_t dic_adr_regs[12] = {0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14}
 
 static bool init_dic() {
 
+	dic_en = false;
+
 	memset(dic_dir, DIC_DIR_IGNORE, 12);
 
 	for (int i = 0; i < 96; i++)
 		dic_table[i] = NULL;
-
-	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
-	if (!node)
-		return false;
-
-	param_tree_node_t* item;
-
-	//считывание адреса платы DIC
-
-	item = ParamTree_Find(node, "DIC", PARAM_TREE_SEARCH_ITEM);
-	if (!item || !item->value)
-		return false;
-
-	if (sscanf_s(item->value, "%u", &dic_adr) <= 0)
-		return false;
-
 
 	//поиск всех входов и выходов
 	param_tree_node_t *in_node, *out_node;
@@ -1052,15 +1039,10 @@ static bool init_dic() {
 		return true;    //DIC не используется
 
 
-
-	//проверка наличия платы DIC
-	if (RTIn(dic_adr + 11) != 'g') {
-		LOG_AND_SCREEN("DIC:  NO DIC!!! dic adress: 0x%04X", dic_adr);
-		return false;
-	}
-
+	param_tree_node_t* item;
 
 	//считывание входов
+	unsigned in_out_counter = 0;
 	item = NULL;
 	if(in_node)
 		item = ParamTree_Child(in_node);
@@ -1078,6 +1060,8 @@ static bool init_dic() {
 			
 			dic_dir[pin/8] = DIC_DIR_IN;
 			dic_table[pin] = math_bool_in + reg;
+
+			in_out_counter++;
 
 			item = ParamTree_NextItem(item);
 		}
@@ -1102,9 +1086,36 @@ static bool init_dic() {
 			dic_dir[pin / 8] = DIC_DIR_OUT;
 			dic_table[pin] = math_bool_out + reg;
 
+			in_out_counter++;
+
 			item = ParamTree_NextItem(item);
 		}
 	}
+
+	if (in_out_counter == 0)  //DIC не используется
+		return true;
+
+	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	//считывание адреса платы DIC
+
+	item = ParamTree_Find(node, "DIC", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &dic_adr) <= 0)
+		return false;
+
+
+
+	//проверка наличия платы DIC
+	if (RTIn(dic_adr + 11) != 'g') {
+		LOG_AND_SCREEN("DIC:  NO DIC!!! dic adress: 0x%04X", dic_adr);
+		return false;
+	}
+
 
 
 	
@@ -1155,13 +1166,16 @@ static bool init_dic() {
 	RTOut(dic_adr + 0, 0x08);  //320нс
 	RTOut(dic_adr + 15, 0x00);
 
-	
+	dic_en = true;
 
 	return true;
 }
 
 
 void dic_read() {
+
+	if (!dic_en)
+		return;
 
 	uint8_t u8;
 	unsigned cnt;
@@ -1179,6 +1193,9 @@ void dic_read() {
 }
 
 void dic_write() {
+
+	if (!dic_en)
+		return;
 
 	uint8_t u8;
 	unsigned cnt;
@@ -1223,34 +1240,17 @@ static bool init_fiu() {
 
 	fiu_table_size = 0;
 
-	param_tree_node_t* node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
-	if (!node)
-		return false;
-
+	
+	param_tree_node_t* node;
 	param_tree_node_t* item;
 	param_tree_node_t* fiu_node;
-
-	//считывание адресов плат ФИУ
-
-	item = ParamTree_Find(node, "FIU1", PARAM_TREE_SEARCH_ITEM);
-	if (!item || !item->value)
-		return false;
-
-	if (sscanf_s(item->value, "%u", &fiu1_adr) <= 0)
-		return false;
-
-	item = ParamTree_Find(node, "FIU2", PARAM_TREE_SEARCH_ITEM);
-	if (!item || !item->value)
-		return false;
-
-	if (sscanf_s(item->value, "%u", &fiu2_adr) <= 0)
-		return false;
 
 
 	fiu_node = ParamTree_Find(ParamTree_MainNode(), "FIU", PARAM_TREE_SEARCH_NODE);
 	if (!fiu_node)
 		return true;   // ФИУ не используется
-	
+
+
 
 	int num;
 	bool err = false;
@@ -1316,6 +1316,29 @@ static bool init_fiu() {
 	
 	if (!fiu_table_size)
 		return true;  //нет настроенных каналов
+
+
+	//считывание адресов плат ФИУ
+
+	node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	item = ParamTree_Find(node, "FIU1", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &fiu1_adr) <= 0)
+		return false;
+
+	item = ParamTree_Find(node, "FIU2", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		return false;
+
+	if (sscanf_s(item->value, "%u", &fiu2_adr) <= 0)
+		return false;
+
+
 
 
 	//проверка наличия фиу1 и фиу2
