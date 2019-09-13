@@ -52,13 +52,13 @@ typedef struct {
 	uint32_t size;            //размер данных
 	uint32_t crc32;           //контрольная сумма по data[size]
 	uint8_t  hash[16];        //MD5 хэш по data[size]
-	// data[size]
+							  // data[size]
 } settings_file_header_t;
 #pragma pack(pop)
 
 
 // указатели на описание настроек и строк
-static settings_file_header_t* settings_header = NULL;   
+static settings_file_header_t* settings_header = NULL;
 static settings_file_header_t* strings_header = NULL;
 
 //указатели на выделенную память под хранение настроек
@@ -74,7 +74,7 @@ static bool check_settings_msg(msg_type_settings_t* msg, unsigned size) {
 		return false;
 	}
 
-	if (!crc32_check((char*)(&msg->crc32+1), msg->data_offset + msg->bytes - 4, msg->crc32)) {
+	if (!crc32_check((char*)(&msg->crc32 + 1), msg->data_offset + msg->bytes - 4, msg->crc32)) {
 		LOG_AND_SCREEN("Settings file bad crc32!");
 		return false;
 	}
@@ -94,7 +94,7 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 	if (msg->size < sizeof(msg_type_settings_t))
 		return;
 
-	msg_type_settings_t* s_msg  = (msg_type_settings_t*) &msg->data[0];
+	msg_type_settings_t* s_msg = (msg_type_settings_t*)&msg->data[0];
 	if (!check_settings_msg(s_msg, msg->size))
 		return;
 
@@ -103,10 +103,10 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 	filesystem_fragment_t fragments[2];
 
 	header.size = s_msg->bytes;
-	header.crc32 = crc32((char*)s_msg+s_msg->data_offset, s_msg->bytes);
+	header.crc32 = crc32((char*)s_msg + s_msg->data_offset, s_msg->bytes);
 	memcpy(&header.hash, &s_msg->md5_hash, 16);
-	
-	fragments[0].pointer = (char*) &header;
+
+	fragments[0].pointer = (char*)&header;
 	fragments[0].size = sizeof(header);
 	fragments[1].pointer = (char*)s_msg + s_msg->data_offset;
 	fragments[1].size = s_msg->bytes;
@@ -117,7 +117,7 @@ void settings_recv_callback(net_msg_t* msg, uint64_t channel) {
 	if (filesystem_write_file_fragments(SETTINGS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR)
 		return;
 
-    
+
 	LOG_AND_SCREEN("Reboot...");
 	RTReboot();
 }
@@ -143,14 +143,14 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 	if (!init_flags.settings_init || !settings_header
 		|| (!any && memcmp(request->md5_hash, settings_header->hash, 16))) {
 
-		
+
 		if (net_msg_buf_get_available_space(msg) < sizeof(msg_type_settings_t)) {
 			msg = net_get_msg_buf(sizeof(msg_type_settings_t));
 			if (!msg)
 				return;
 		}
 
-		s_msg = (msg_type_settings_t*) &msg->data[0];
+		s_msg = (msg_type_settings_t*)&msg->data[0];
 		s_msg->bytes = 0;
 		s_msg->data_offset = sizeof(msg_type_settings_t);
 		memset(s_msg->md5_hash, 0, 16);
@@ -169,7 +169,7 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 	//чтение файла настроек
 
 	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR) return;
-	
+
 	filesystem_fragment_t fragments[2];
 
 	fragments[0].size = sizeof(settings_file_header_t);
@@ -181,13 +181,13 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 	char* s_data_ptr = fragments[1].pointer;
 
 	//проверка считанных данных
-	if (!s_data_ptr 
+	if (!s_data_ptr
 		|| !s_header
 		|| s_header->size != fragments[1].size
 		|| !crc32_check(s_data_ptr, s_header->size, s_header->crc32)) {
-		if(s_data_ptr)
+		if (s_data_ptr)
 			free(s_data_ptr);
-		if(s_header)
+		if (s_header)
 			free(s_header);
 		return;
 	}
@@ -205,7 +205,7 @@ void settings_request_callback(net_msg_t* msg, uint64_t channel) {
 				break;
 		}
 
-		s_msg = (msg_type_settings_t*) &msg->data;
+		s_msg = (msg_type_settings_t*)&msg->data;
 		s_msg->bytes = s_header->size;
 		s_msg->data_offset = sizeof(msg_type_settings_t);
 		memcpy(s_msg->md5_hash, s_header->hash, 16);
@@ -256,14 +256,14 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 		return;
 	}
 
-    //запись файла на диск
+	//запись файла на диск
 
 	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR) {
 		LOG_AND_SCREEN("Filesystem i/o error!");
 		return;
 	}
 
-	if (filesystem_write_file(FIRMWARE_FILENAME, ((char*)f_msg)+f_msg->data_offset,f_msg->bytes) != FILESYSTEM_NO_ERR) {
+	if (filesystem_write_file(FIRMWARE_FILENAME, ((char*)f_msg) + f_msg->data_offset, f_msg->bytes) != FILESYSTEM_NO_ERR) {
 		LOG_AND_SCREEN("Error! Write file \"%s\" failed!", FIRMWARE_FILENAME);
 		return;
 	}
@@ -286,10 +286,10 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 	//удаление rtb файла 
 	filesystem_delete_file(FIRMWARE_FILENAME);
 
-	if (res!=RT_BDISK_SUCCESS) {
+	if (res != RT_BDISK_SUCCESS) {
 		LOG_AND_SCREEN("Error! RTMakeBootDisk() return %d", res);
 		return;
-	}	
+	}
 
 
 	LOG_AND_SCREEN("Reboot...");
@@ -297,13 +297,7 @@ void new_firmware_callback(net_msg_t* msg, uint64_t channel) {
 }
 
 
-<<<<<<< HEAD
 static bool init_common();
-=======
-void steptime_start_check();
-
-
->>>>>>> master
 static bool init_math();
 static bool init_adc();
 static bool init_indi();
@@ -342,33 +336,34 @@ int logic_init() {
 				LOG_AND_SCREEN("COMMON init failed!");
 				break;
 			}
-			
+
 #if 0
-			
+
 			if (!init_adc()) {
 				LOG_AND_SCREEN("ADC init failed!");
 				break;
 			}
-			
+
+#endif
+
 			DEBUG_ADD_POINT(302);
 			if (!init_dic()) {
 				LOG_AND_SCREEN("DIC init failed!");
 				break;
 			}
-			
+
 			DEBUG_ADD_POINT(303);
 			if (!init_fiu()) {
 				LOG_AND_SCREEN("FIU init failed!");
 				break;
 			}
-#endif
-			
+
 			DEBUG_ADD_POINT(304);
 			if (!init_indi()) {
 				LOG_AND_SCREEN("INDI init failed!");
 				break;
 			}
-			
+
 			DEBUG_ADD_POINT(305);
 			if (!init_params()) {
 				LOG_AND_SCREEN("PARAMS init failed!");
@@ -387,8 +382,8 @@ int logic_init() {
 				LOG_AND_SCREEN("OSCILLOSCOPE init failed!");
 				break;
 			}
-			
-		    DEBUG_ADD_POINT(308);
+
+			DEBUG_ADD_POINT(308);
 
 			if (!init_set_inputs()) {
 				LOG_AND_SCREEN("SET_INPUTS init failed!");
@@ -398,15 +393,15 @@ int logic_init() {
 			DEBUG_ADD_POINT(309);
 
 			//дельта опционально
-            #ifdef DELTA_HMI_ENABLE
+#ifdef DELTA_HMI_ENABLE
 			delta_HMI_init_regs();
 			delta_hmi_open(delta_HMI_set_regs);
-            #endif
+#endif
 
 			//инициализация времени
 			time_init();
-			
-		    DEBUG_ADD_POINT(310);
+
+			DEBUG_ADD_POINT(310);
 
 			//инициализация измерителя шага
 			if (!init_steptime()) {
@@ -419,7 +414,7 @@ int logic_init() {
 				LOG_AND_SCREEN("SHU init failed!");
 				break;
 			}
-			
+
 			//Инициализация команд
 			if (!init_commands()) {
 				LOG_AND_SCREEN("COMMANDS init failed!");
@@ -441,7 +436,7 @@ int logic_init() {
 			ok = true;
 			break;
 		}
-		
+
 	}
 
 	//прием новых конфигурационных файлов включаем в любом случае
@@ -452,7 +447,7 @@ int logic_init() {
 
 	//прием файла новой прошивки
 	net_add_dispatcher((uint8_t)NET_MSG_SURZA_FIRMWARE, new_firmware_callback);
-	
+
 
 	DEBUG_ADD_POINT(311);
 
@@ -470,7 +465,7 @@ int read_settings() {
 		LOG_AND_SCREEN("Filesystem i/o error!");
 		return -1;
 	}
-	
+
 	filesystem_fragment_t fragments[2];
 
 	fragments[0].size = sizeof(settings_file_header_t);
@@ -482,15 +477,15 @@ int read_settings() {
 		return -1;
 	}
 
-	settings_header = (settings_file_header_t*) fragments[0].pointer;
+	settings_header = (settings_file_header_t*)fragments[0].pointer;
 	settings_data_ptr = fragments[1].pointer;
 
 	//проверка считанных данных
 	if (!settings_data_ptr
 		|| settings_header->size != fragments[1].size
-		|| !crc32_check(settings_data_ptr, settings_header->size, settings_header->crc32) ) {
+		|| !crc32_check(settings_data_ptr, settings_header->size, settings_header->crc32)) {
 		LOG_AND_SCREEN("Settings file data corrupted!");
-		if(settings_data_ptr)
+		if (settings_data_ptr)
 			free(settings_data_ptr);
 		return -1;
 	}
@@ -498,7 +493,7 @@ int read_settings() {
 	LOG_AND_SCREEN("Settings load OK");
 	LOG_AND_SCREEN("Building param tree...");
 
-	
+
 	if (ParamTree_Make(settings_data_ptr, settings_header->size) < 0) {
 		LOG_AND_SCREEN("Param tree build failed!");
 		free(settings_data_ptr);
@@ -689,8 +684,8 @@ static unsigned base_offset[6];   //смещения начала данных по типам от начала со
 static unsigned indi_msg_size;    //размер заполненного сообщения (msg_type_indi_t + данные)
 
 
-//максимально допустимое количество копируемых байт индикаторов в одном прерывании (такте сурзы)
-//задавать обязательно только кратно 4 !!! (иначе могут портится данные, так как одно значение может писаться частями из разных тактов)
+								  //максимально допустимое количество копируемых байт индикаторов в одном прерывании (такте сурзы)
+								  //задавать обязательно только кратно 4 !!! (иначе могут портится данные, так как одно значение может писаться частями из разных тактов)
 #define INDI_PART_SIZE  64
 
 
@@ -716,11 +711,11 @@ static bool init_indi() {
 	src_ptr[3] = math_real_out;
 	src_ptr[4] = math_int_out;
 	src_ptr[5] = math_bool_out;
-	
+
 	//смещения начала данных разных типов от начала сообщения
 	base_offset[0] = sizeof(msg_type_indi_t);
 	for (int i = 1; i < 6; i++)
-		base_offset[i] = base_offset[i - 1] + bytes_num[i-1];
+		base_offset[i] = base_offset[i - 1] + bytes_num[i - 1];
 
 	indi_msg_size = base_offset[5] + bytes_num[5];
 
@@ -747,12 +742,12 @@ static bool init_indi() {
 	unsigned offset;
 
 
-	for(int i=0; i<6; i++)
+	for (int i = 0; i<6; i++)
 		for (p = 0, offset = base_offset[i]; p < parts[i]; p++, n++) {
 			indi_step_pointers[n].src_ptr = (char*)(src_ptr[i]) + p * INDI_PART_SIZE;
-			indi_step_pointers[n].bytes = (p + 1 == parts[i]) ? ( (bytes_num[i] % INDI_PART_SIZE) ? (bytes_num[i] % INDI_PART_SIZE ) : INDI_PART_SIZE ) : INDI_PART_SIZE;
+			indi_step_pointers[n].bytes = (p + 1 == parts[i]) ? ((bytes_num[i] % INDI_PART_SIZE) ? (bytes_num[i] % INDI_PART_SIZE) : INDI_PART_SIZE) : INDI_PART_SIZE;
 			indi_step_pointers[n].dst_offset = offset;
-			
+
 			offset += indi_step_pointers[n].bytes;
 		}
 
@@ -793,7 +788,7 @@ void indi_send() {
 
 	int new_time = steady_clock_get();
 
-	if (steady_clock_expired(last_time, new_time, INDI_PERIOD_MS*1000)) {
+	if (steady_clock_expired(last_time, new_time, INDI_PERIOD_MS * 1000)) {
 		last_time = new_time;
 		update = true;
 	}
@@ -815,13 +810,13 @@ void indi_send() {
 				break;
 
 
-			msg  = net_get_msg_buf(indi_msg_size);
+			msg = net_get_msg_buf(indi_msg_size);
 			if (!msg)
 				break;
 
 			msg->type = (uint8_t)NET_MSG_INDI;
 			msg->subtype = 0;
-			indi_msg = (msg_type_indi_t*) &msg->data[0];
+			indi_msg = (msg_type_indi_t*)&msg->data[0];
 
 			//заполенение заголовка сообщения
 			indi_msg->header_size = sizeof(msg_type_indi_t);
@@ -859,9 +854,9 @@ void indi_send() {
 
 			DEBUG_ADD_POINT(202);
 
-            #ifdef DELTA_HMI_ENABLE
-			  delta_HMI_copy_indi(msg);  //копируем индикаторы для дельты
-            #endif
+#ifdef DELTA_HMI_ENABLE
+			delta_HMI_copy_indi(msg);  //копируем индикаторы для дельты
+#endif
 
 			DEBUG_ADD_POINT(203);
 
@@ -974,13 +969,13 @@ bool init_adc() {
 		for (int i = 0; i < 16; i++)
 			data[i] = math_int_in_num;
 
-		unsigned num=0;
+		unsigned num = 0;
 		unsigned n;
 
 		item = ParamTree_FirstItem(item);
 		while (item && num<16) {
-			
-			if (sscanf_s(item->value, "%u", &n) <= 0 || n>=16)
+
+			if (sscanf_s(item->value, "%u", &n) <= 0 || n >= 16)
 				return false;
 			if (sscanf_s(item->name, "%u", &data[n]) <= 0 || data[n] >= math_int_in_num)
 				return false;
@@ -993,7 +988,7 @@ bool init_adc() {
 
 		//заполнение таблиц ацп
 
-		for (unsigned i = 0; i < 16; i++){
+		for (unsigned i = 0; i < 16; i++) {
 			if (data[i] < math_int_in_num) {
 				adc_table[i / 8][i % 8] = math_int_in + data[i];
 				adc_ch_num[i / 8]++;
@@ -1011,25 +1006,23 @@ bool init_adc() {
 
 
 
-void adc_irq_handler(void){
+
+void adc_irq_handler(void) {
 
 	DEBUG_ADD_POINT(20);
 
-	//запуск измерения времени (для встроенного измерителя)
-	steptime_start_check();
-
 	//запуск второго ацп
-	if(adc_num>1)
+	if (adc_num>1)
 		ai8s_start_second_adc();
 
 	//чтение каналов ацп 1
 	for (unsigned i = 0; i < 8; i++)
-		if(adc_table[0][i])
+		if (adc_table[0][i])
 			*(adc_table[0][i]) = ai8s_read_ch(0, i);
 
-	
+
 	//сброс прерывания чтением 7го канала (если не был прочитан до этого)
-	if(!adc_table[0][7])
+	if (!adc_table[0][7])
 		(void)ai8s_read_ch(0, 7);
 
 
@@ -1080,7 +1073,7 @@ static uint8_t* dic_table[96];
 #define DIC_DIR_IN      1
 #define DIC_DIR_OUT     2
 
-static const uint8_t dic_adr_regs[12] = {0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14};
+static const uint8_t dic_adr_regs[12] = { 0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14 };
 
 
 static bool init_dic() {
@@ -1107,7 +1100,7 @@ static bool init_dic() {
 	//считывание входов
 	unsigned in_out_counter = 0;
 	item = NULL;
-	if(in_node)
+	if (in_node)
 		item = ParamTree_Child(in_node);
 	if (item) {
 
@@ -1120,8 +1113,8 @@ static bool init_dic() {
 				return false;
 			if (sscanf_s(item->value, "%u", &pin) <= 0 || pin >= 96)
 				return false;
-			
-			dic_dir[pin/8] = DIC_DIR_IN;
+
+			dic_dir[pin / 8] = DIC_DIR_IN;
 			dic_table[pin] = math_bool_in + reg;
 
 			in_out_counter++;
@@ -1181,12 +1174,12 @@ static bool init_dic() {
 
 
 
-	
+
 	// настройка платы DIC  в соответствии с прочитанной конифгурацией
 
 	//все выходы заранее в отключенное состояние
-	for(int i=0; i<12; i++)
-		RTOut(dic_adr+dic_adr_regs[i], 0xff);
+	for (int i = 0; i<12; i++)
+		RTOut(dic_adr + dic_adr_regs[i], 0xff);
 
 	//конфигурирование на вход\выход
 	uint8_t mask;
@@ -1222,7 +1215,7 @@ static bool init_dic() {
 	//все выходы заранее в отключенное состояние (второй раз на всяк случай)
 	for (int i = 0; i<12; i++)
 		RTOut(dic_adr + dic_adr_regs[i], 0xff);
-	
+
 
 	//установка аппаратного антидребезга
 	RTOut(dic_adr + 15, 0x01);
@@ -1246,7 +1239,7 @@ void dic_read() {
 
 	for (unsigned i = 0; i < 12; i++)
 		if (dic_dir[i] == DIC_DIR_IN) {
-			u8 = RTIn(dic_adr+dic_adr_regs[i]);
+			u8 = RTIn(dic_adr + dic_adr_regs[i]);
 			cnt = (i << 3);
 			for (adr = cnt; adr < cnt + 8; adr++, u8 >>= 1)
 				if (dic_table[adr])
@@ -1271,7 +1264,7 @@ void dic_write() {
 				u8 >>= 1;
 				u8 |= (dic_table[adr] ? (*(dic_table[adr]) ? 0x00 : 0x80) : 0x80);
 			}
-			RTOut(dic_adr+dic_adr_regs[i], u8);
+			RTOut(dic_adr + dic_adr_regs[i], u8);
 		}
 
 }
@@ -1303,7 +1296,7 @@ static bool init_fiu() {
 
 	fiu_table_size = 0;
 
-	
+
 	param_tree_node_t* node;
 	param_tree_node_t* item;
 	param_tree_node_t* fiu_node;
@@ -1333,7 +1326,7 @@ static bool init_fiu() {
 		else
 			if (sscanf_s(item->value, "%u", &board) <= 0 || board >= 2)
 				err = true;
-	
+
 
 		item = ParamTree_Find(node, "channel", PARAM_TREE_SEARCH_ITEM);
 		if (!item || !item->value)
@@ -1354,7 +1347,7 @@ static bool init_fiu() {
 			if (sscanf_s(item->value, "%u", &reg) <= 0 || reg >= math_bool_out_num)
 				err = true;
 
-		if(!err)
+		if (!err)
 			fiu_table[num].cmd = math_bool_out + reg;
 
 
@@ -1376,12 +1369,12 @@ static bool init_fiu() {
 		fiu_table_size = 0;
 		return false;
 	}
-	
+
 	if (!fiu_table_size)
 		return true;  //нет настроенных каналов
 
 
-	//считывание адресов плат ФИУ
+					  //считывание адресов плат ФИУ
 
 	node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
 	if (!node)
@@ -1416,8 +1409,8 @@ static bool init_fiu() {
 		LOG_AND_SCREEN("FIU_2:  NO FIU!! fiu adress: 0x%04X", fiu2_adr);
 		return false;
 	}
-	
-	
+
+
 	return true;
 }
 
@@ -1427,9 +1420,9 @@ void fiu_write() {
 	int32_t setpoint;
 
 	for (unsigned i = 0; i < fiu_table_size; i++)
-		if (*(fiu_table[i].cmd)){
+		if (*(fiu_table[i].cmd)) {
 			setpoint = *(fiu_table[i].setpoint);
-			if (setpoint >= 0){
+			if (setpoint >= 0) {
 				if (setpoint > 0xffff)
 					setpoint = 0xffff;
 				RTOutW(fiu_table[i].adr_to_write, (uint16_t)setpoint);
@@ -1520,11 +1513,11 @@ static bool init_params() {
 	char *str_min;
 	char *str_max;
 	char *str_default;
-	
+
 
 	bool err = false;
 	n = 0;
-	
+
 	for (node = ParamTree_Child(param_node); node && !err; node = node->next, n++) {
 
 		item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
@@ -1562,32 +1555,32 @@ static bool init_params() {
 		if (!err) {
 			switch (params_ptr[n].type) {
 			case PARAM_TYPE_FLOAT: err = true;
-				                   if (params_ptr[n].num >= math_real_in_num) break;
-								   if (sscanf_s(str_min, "%f", &(params_ptr[n].val_min.f32)) <= 0) break;
-								   if (sscanf_s(str_max, "%f", &(params_ptr[n].val_max.f32)) <= 0) break;
-								   if (sscanf_s(str_default, "%f", &(params_ptr[n].val_default.f32)) <= 0) break;
-								   if (params_ptr[n].val_min.f32 > params_ptr[n].val_max.f32) break;
-								   if (params_ptr[n].val_default.f32 < params_ptr[n].val_min.f32) break;
-								   if (params_ptr[n].val_default.f32 > params_ptr[n].val_max.f32) break;
-								   err = false;
-								   break;
+				if (params_ptr[n].num >= math_real_in_num) break;
+				if (sscanf_s(str_min, "%f", &(params_ptr[n].val_min.f32)) <= 0) break;
+				if (sscanf_s(str_max, "%f", &(params_ptr[n].val_max.f32)) <= 0) break;
+				if (sscanf_s(str_default, "%f", &(params_ptr[n].val_default.f32)) <= 0) break;
+				if (params_ptr[n].val_min.f32 > params_ptr[n].val_max.f32) break;
+				if (params_ptr[n].val_default.f32 < params_ptr[n].val_min.f32) break;
+				if (params_ptr[n].val_default.f32 > params_ptr[n].val_max.f32) break;
+				err = false;
+				break;
 			case PARAM_TYPE_INT:   err = true;
-				                   if (params_ptr[n].num >= math_int_in_num) break;
-				                   if (sscanf_s(str_min, "%d", &(params_ptr[n].val_min.i32)) <= 0) break;
-				                   if (sscanf_s(str_max, "%d", &(params_ptr[n].val_max.i32)) <= 0) break;
-				                   if (sscanf_s(str_default, "%d", &(params_ptr[n].val_default.i32)) <= 0) break;
-				                   if (params_ptr[n].val_min.i32 > params_ptr[n].val_max.i32) break;
-				                   if (params_ptr[n].val_default.i32 < params_ptr[n].val_min.i32) break;
-				                   if (params_ptr[n].val_default.i32 > params_ptr[n].val_max.i32) break;
-				                   err = false;
-				                   break;
+				if (params_ptr[n].num >= math_int_in_num) break;
+				if (sscanf_s(str_min, "%d", &(params_ptr[n].val_min.i32)) <= 0) break;
+				if (sscanf_s(str_max, "%d", &(params_ptr[n].val_max.i32)) <= 0) break;
+				if (sscanf_s(str_default, "%d", &(params_ptr[n].val_default.i32)) <= 0) break;
+				if (params_ptr[n].val_min.i32 > params_ptr[n].val_max.i32) break;
+				if (params_ptr[n].val_default.i32 < params_ptr[n].val_min.i32) break;
+				if (params_ptr[n].val_default.i32 > params_ptr[n].val_max.i32) break;
+				err = false;
+				break;
 			case PARAM_TYPE_BOOL:  err = true;
-				                   if (params_ptr[n].num >= math_bool_in_num) break;
-								   if (sscanf_s(str_default, "%d", &(params_ptr[n].val_default.i32)) <= 0) break;
-								   if (params_ptr[n].val_default.i32 < 0) break;
-								   if (params_ptr[n].val_default.i32 > 1) break;
-								   err = false;
-								   break;
+				if (params_ptr[n].num >= math_bool_in_num) break;
+				if (sscanf_s(str_default, "%d", &(params_ptr[n].val_default.i32)) <= 0) break;
+				if (params_ptr[n].val_default.i32 < 0) break;
+				if (params_ptr[n].val_default.i32 > 1) break;
+				err = false;
+				break;
 			default: err = true; break;
 			}
 		}
@@ -1601,17 +1594,17 @@ static bool init_params() {
 	}
 
 	params_num = n;
-	
+
 
 	//чтение файла параметров 
-	
+
 	if (!params_read_file()) {
 		LOG_AND_SCREEN("Default params apply !!!");
-		for(unsigned i=0; i<params_num; i++)
+		for (unsigned i = 0; i<params_num; i++)
 			params_ptr[i].val.i32 = params_ptr[i].val_default.i32;
 		params_save_file();
 	}
-	
+
 
 	//применение всех параметров на входы МЯДа
 	params_apply_all();
@@ -1652,7 +1645,7 @@ typedef struct {
 
 static bool params_read_file() {
 
-	
+
 	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR) return false;
 
 	filesystem_fragment_t fragments[2];
@@ -1662,8 +1655,8 @@ static bool params_read_file() {
 
 	if (filesystem_read_file_fragments(PARAMS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR) return false;
 
-	params_file_header_t* header = (params_file_header_t*) fragments[0].pointer;
-	param_value_t* val_ptr = (param_value_t*) fragments[1].pointer;
+	params_file_header_t* header = (params_file_header_t*)fragments[0].pointer;
+	param_value_t* val_ptr = (param_value_t*)fragments[1].pointer;
 
 	bool ret = true;
 
@@ -1673,17 +1666,17 @@ static bool params_read_file() {
 		|| header->params_num != fragments[1].size / sizeof(param_value_t)
 		|| header->params_num != params_num
 		|| !crc32_check((char*)val_ptr, fragments[1].size, header->crc32)
-		|| memcmp(header->hash, settings_header->hash, 16) )
+		|| memcmp(header->hash, settings_header->hash, 16))
 		ret = false;
 	else {
-	
+
 		//запись в таблицу прочитанных параметров и их проверка
 		param_value_t *ptr = val_ptr;
 		for (unsigned i = 0; i < params_num && ret; i++, ptr++) {
 
 			switch (params_ptr[i].type) {
 
-			case PARAM_TYPE_FLOAT: 
+			case PARAM_TYPE_FLOAT:
 				if (!_finite(ptr->f32)
 					|| ptr->f32<params_ptr[i].val_min.f32
 					|| ptr->f32>params_ptr[i].val_max.f32)
@@ -1759,7 +1752,7 @@ static bool params_save_file() {
 	bool ret = true;
 
 	if (filesystem_set_current_dir("C:\\") != FILESYSTEM_NO_ERR
-		|| filesystem_write_file_fragments(PARAMS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR){
+		|| filesystem_write_file_fragments(PARAMS_FILENAME, fragments, 2) != FILESYSTEM_NO_ERR) {
 		LOG_AND_SCREEN("Filesystem error!");
 		ret = false;
 	}
@@ -1788,8 +1781,8 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 
 	DEBUG_ADD_POINT(351);
 
-	if (p_msg->num>=params_num) {
-		if (p_msg->num==0xffff) {  //reset all to default
+	if (p_msg->num >= params_num) {
+		if (p_msg->num == 0xffff) {  //reset all to default
 			global_spinlock_lock();
 			for (unsigned i = 0; i < params_num; i++)
 				params_ptr[i].val.i32 = params_ptr[i].val_default.i32;
@@ -1806,42 +1799,43 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 
 	bool ok = true;
 
-	if(p_msg->num!=0xffff)
-	switch (params_ptr[p_msg->num].type) {
-	case PARAM_TYPE_FLOAT: 
-		global_spinlock_lock();
-		if (!_finite(p_msg->value.f32)
-			|| p_msg->value.f32<params_ptr[p_msg->num].val_min.f32
-			|| p_msg->value.f32>params_ptr[p_msg->num].val_max.f32) {
-			ok = false;
-		} else {
-			params_ptr[p_msg->num].val.f32 = p_msg->value.f32;
-		}
-		global_spinlock_unlock();
-		break;
+	if (p_msg->num != 0xffff)
+		switch (params_ptr[p_msg->num].type) {
+		case PARAM_TYPE_FLOAT:
+			global_spinlock_lock();
+			if (!_finite(p_msg->value.f32)
+				|| p_msg->value.f32<params_ptr[p_msg->num].val_min.f32
+				|| p_msg->value.f32>params_ptr[p_msg->num].val_max.f32) {
+				ok = false;
+			}
+			else {
+				params_ptr[p_msg->num].val.f32 = p_msg->value.f32;
+			}
+			global_spinlock_unlock();
+			break;
 
-	case PARAM_TYPE_INT:
-		if (p_msg->value.i32<params_ptr[p_msg->num].val_min.i32
-			|| p_msg->value.i32>params_ptr[p_msg->num].val_max.i32) {
-			ok = false;
-		}
-		else {
-			params_ptr[p_msg->num].val.i32 = p_msg->value.i32;
-		}
-		break;
+		case PARAM_TYPE_INT:
+			if (p_msg->value.i32<params_ptr[p_msg->num].val_min.i32
+				|| p_msg->value.i32>params_ptr[p_msg->num].val_max.i32) {
+				ok = false;
+			}
+			else {
+				params_ptr[p_msg->num].val.i32 = p_msg->value.i32;
+			}
+			break;
 
-	case PARAM_TYPE_BOOL:  
-		if (p_msg->value.i32<0
-			|| p_msg->value.i32>1) {
-			ok = false;
-		}
-		else {
-			params_ptr[p_msg->num].val.i32 = p_msg->value.i32;
-		}
-		break;
+		case PARAM_TYPE_BOOL:
+			if (p_msg->value.i32<0
+				|| p_msg->value.i32>1) {
+				ok = false;
+			}
+			else {
+				params_ptr[p_msg->num].val.i32 = p_msg->value.i32;
+			}
+			break;
 
-	default: return;
-	}
+		default: return;
+		}
 
 	DEBUG_ADD_POINT(353);
 
@@ -1849,7 +1843,7 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 		LOG_AND_SCREEN("Can't apply param - wrong value!");
 		return;
 	}
-	
+
 	if (!params_save_file())
 		return;
 
@@ -1867,10 +1861,10 @@ void params_recv_callback(net_msg_t* msg, uint64_t channel) {
 	}
 
 	DEBUG_ADD_POINT(355);
-	
+
 	atom_set_state(&params_update_param_flag, 1);
 
-    return;
+	return;
 }
 
 
@@ -1893,7 +1887,7 @@ static void params_update() {
 		default: return;
 		}
 	}
-	
+
 	return;
 }
 
@@ -1911,14 +1905,14 @@ static void params_update() {
 
 typedef struct {
 	uint8_t* value_ptr;  // указатель на флаг события
-              //настройки из конфигурации
+						 //настройки из конфигурации
 	uint32_t increment;
 	uint32_t decrement;
 	uint32_t block_level;
 	uint32_t block_time;
 	uint32_t block_warning_time;
 	uint32_t edge;
-	          //текущее состояние данных события во время работы
+	//текущее состояние данных события во время работы
 	uint32_t flag;       // текущее состояние флага события
 	uint32_t prev_flag;  // флаги событий на предыдущем вызове
 	uint32_t change;     // признак возникновения события с учетом фронта
@@ -1961,7 +1955,7 @@ volatile int journal_events_num;      //текущее кол-во событий в очереди
 volatile int journal_events_head;     //указатель на запись в массив. Всегда указывает на последнее добавленное событие (при journal_events_num!=0)
 volatile int journal_events_tail;     //указатель на чтение из массива. Всегда указывает на событие, находящееся в массиве дольше всего (при journal_events_num!=0)
 
-//смещение в байтах до полей с данными события от начала  структуры journal_event_t
+									  //смещение в байтах до полей с данными события от начала  структуры journal_event_t
 static unsigned journal_event_offset_result;
 static unsigned journal_event_offset_real;
 static unsigned journal_event_offset_int;
@@ -1999,7 +1993,7 @@ static bool init_journal() {
 	param_tree_node_t* data_node;
 	param_tree_node_t* node;
 	param_tree_node_t* item;
-	
+
 
 	journal_node = ParamTree_Find(ParamTree_MainNode(), "JOURNAL", PARAM_TREE_SEARCH_NODE);
 	if (!journal_node) {
@@ -2014,7 +2008,7 @@ static bool init_journal() {
 		return true;   // Нет событий в журнале событий
 	}
 	else {
-		events_num  = ParamTree_ChildNum(events_node);
+		events_num = ParamTree_ChildNum(events_node);
 		if (!events_num) {
 			LOG_AND_SCREEN("No JOURNAL EVENTS!!");
 			return true;   // нет событий
@@ -2024,8 +2018,8 @@ static bool init_journal() {
 
 	//поиск и заполнение всех событий
 
-	 //выделение памяти для данных каждого события и их результатов
-	event_data = (journal_event_data_t*)calloc(events_num , sizeof(journal_event_data_t));
+	//выделение памяти для данных каждого события и их результатов
+	event_data = (journal_event_data_t*)calloc(events_num, sizeof(journal_event_data_t));
 	if (!event_data) {
 		LOG_AND_SCREEN("JOURNAL init error! (alloc event_data)");
 		return false;
@@ -2056,8 +2050,8 @@ static bool init_journal() {
 
 		//указатель на флаг события в выходной структуре мяда
 		event_data[n].value_ptr = math_bool_out + event_data[n].increment;
-		
-		
+
+
 		item = ParamTree_Find(node, "edge", PARAM_TREE_SEARCH_ITEM);
 		if (!item || !item->value)
 			err = true;
@@ -2109,7 +2103,7 @@ static bool init_journal() {
 		return false;
 	}
 
-	
+
 	// инициализация данных событий
 	journal_event_num_real = 0;
 	journal_event_num_int = 0;
@@ -2153,7 +2147,7 @@ static bool init_journal() {
 				default: err = true; break;
 				}
 			}
-	
+
 		}
 
 		if (err) {
@@ -2161,11 +2155,11 @@ static bool init_journal() {
 			free(event_data);
 			free(events_result);
 			return false;
-		}		
+		}
 
 	}
 
-	
+
 	//выделение памяти под указатели на данные
 	journal_event_real_myd_ptrs = NULL;
 	journal_event_int_myd_ptrs = NULL;
@@ -2250,9 +2244,9 @@ static bool init_journal() {
 
 	journal_event_offset_result = sizeof(journal_event_t);
 	journal_event_offset_real = journal_event_offset_result + events_num;
-	journal_event_offset_int = journal_event_offset_real + journal_event_num_real*4;
-	journal_event_offset_bool = journal_event_offset_int + journal_event_num_int*4;
-	
+	journal_event_offset_int = journal_event_offset_real + journal_event_num_real * 4;
+	journal_event_offset_bool = journal_event_offset_int + journal_event_num_int * 4;
+
 	journal_event_size = journal_event_offset_bool + journal_event_num_bool;
 
 	//размер делаем кратным 4
@@ -2260,7 +2254,7 @@ static bool init_journal() {
 		journal_event_size++;
 	//-----------------------------------------------------------------------
 
-   
+
 	//выделение памяти под кольцевое хранилище событий
 	journal_events = (uint8_t*)calloc(EVENTS_BUF_SIZE, journal_event_size);
 	if (!journal_events) {
@@ -2273,12 +2267,12 @@ static bool init_journal() {
 	journal_events_head = 0;
 	journal_events_tail = 0;
 
-	LOG_AND_SCREEN("JOURNAL memory: %.1f MBytes", (EVENTS_BUF_SIZE*journal_event_size)/(float)(1024*1024));
+	LOG_AND_SCREEN("JOURNAL memory: %.1f MBytes", (EVENTS_BUF_SIZE*journal_event_size) / (float)(1024 * 1024));
 
 
 	//определение длины сообщения
 	journal_msg_size = sizeof(msg_type_journal_event_t) + events_num + (journal_event_num_real * 4) + (journal_event_num_int * 4) + journal_event_num_bool;
-	
+
 	//получение уникального номера событий
 	journal_event_unique_id = launchnum_get();
 	journal_event_unique_id <<= 32;
@@ -2322,7 +2316,7 @@ static void journal_add() {
 
 		*res_ptr = JOURNAL_NO_EVENT;  //по-умолчанию нет никаких изменений в результатах
 
-		//получение текущего значения флага события
+									  //получение текущего значения флага события
 		ptr->flag = *(ptr->value_ptr);
 
 		//обнаружение изменения флага события
@@ -2331,10 +2325,10 @@ static void journal_add() {
 
 		//снятие флага изменения если фронт изменения не соответствует настройкам события
 		if (ptr->change) {
-			if ( ((ptr->flag == 1) && (ptr->edge == JOURNAL_EDGE_FALL)) || ((ptr->flag == 0) && (ptr->edge == JOURNAL_EDGE_RISE)))
+			if (((ptr->flag == 1) && (ptr->edge == JOURNAL_EDGE_FALL)) || ((ptr->flag == 0) && (ptr->edge == JOURNAL_EDGE_RISE)))
 				ptr->change = 0;
 			else
-				if(!ptr->lock)
+				if (!ptr->lock)
 					trig = true;  //обнаружено новое событие для добавления
 		}
 
@@ -2364,7 +2358,7 @@ static void journal_add() {
 				}
 
 				//обновление состояния
-				if(ptr->lock)
+				if (ptr->lock)
 					*res_ptr = JOURNAL_EVENT_BLOCK;
 				else *res_ptr = (ptr->flag) ? JOURNAL_EVENT_RISE : JOURNAL_EVENT_FALL;
 
@@ -2405,7 +2399,7 @@ static void journal_add() {
 		res_ptr++;
 	}
 
-	
+
 	DEBUG_ADD_POINT(30);
 
 
@@ -2419,29 +2413,29 @@ static void journal_add() {
 
 	if (journal_events_num == journal_events_num_max) //очередь полностью забита. добавлять некуда. возвращаем указатель бошки на прошлую позицию и уходим отсюда нафиг
 		return;
-	
+
 	journal_events_head++;
 	if (journal_events_head == journal_events_num_max)
 		journal_events_head = 0;
 
-	
+
 	journal_events_num++;
 
 	//подтянуть хвост  (подтягивание хвоста только при удалении события из очереди не сработает для первого добавленного)
 	if (journal_events_num == 1)
 		journal_events_tail = journal_events_head;
-	
+
 
 	DEBUG_ADD_POINT(32);
 
 	//заполнение структуры события
-	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size*journal_events_head);
+	journal_event_t* p = (journal_event_t*)(journal_events + journal_event_size * journal_events_head);
 	p->unique_id = journal_event_unique_id++;
 	p->time = time_get();
 
 	//копирование состояний событий
 	memcpy((uint8_t*)p + journal_event_offset_result, events_result, events_num);
-	
+
 	DEBUG_ADD_POINT(33);
 
 	//копирование данных real
@@ -2482,7 +2476,7 @@ static void journal_add() {
 	}
 
 	DEBUG_ADD_POINT(34);
-	
+
 }
 
 //заполнение сообщения с событием на отправку
@@ -2532,17 +2526,17 @@ void journal_update() {
 	/******************************************/
 #if 0
 	//отладка журнала
-	
-	/*
-		if (MATH_IO_BOOL_OUT[6])
-			MATH_IO_BOOL_OUT[6] = 0;
-		else
-			MATH_IO_BOOL_OUT[6] = 1;
 
-		if (MATH_IO_BOOL_OUT[5])
-			MATH_IO_BOOL_OUT[5] = 0;
-		else
-			MATH_IO_BOOL_OUT[5] = 1;
+	/*
+	if (MATH_IO_BOOL_OUT[6])
+	MATH_IO_BOOL_OUT[6] = 0;
+	else
+	MATH_IO_BOOL_OUT[6] = 1;
+
+	if (MATH_IO_BOOL_OUT[5])
+	MATH_IO_BOOL_OUT[5] = 0;
+	else
+	MATH_IO_BOOL_OUT[5] = 1;
 	*/
 	static bool block = true;
 
@@ -2563,11 +2557,11 @@ void journal_update() {
 
 	journal_add();
 
-	
+
 #endif
 	/******************************************/
 
-	
+
 	if (!journal_init_ok)
 		return;
 
@@ -2589,9 +2583,9 @@ void journal_update() {
 	global_spinlock_lock();
 	int head = journal_events_head;
 	int tail = journal_events_tail;
-	unsigned ev_num = (unsigned) journal_events_num;
+	unsigned ev_num = (unsigned)journal_events_num;
 	global_spinlock_unlock();
-	
+
 	if (update) {
 		DEBUG_ADD_POINT(205);
 
@@ -2639,7 +2633,7 @@ void journal_update() {
 
 		int index = last_sent_index + 1;
 		if (index == journal_events_num_max)
-			index = 0;	
+			index = 0;
 
 		net_msg_t* msg = net_get_msg_buf(journal_msg_size);
 		if (!msg)
@@ -2659,7 +2653,7 @@ void journal_update() {
 		DEBUG_ADD_POINT(211);
 
 	}
-	
+
 }
 
 
@@ -2675,7 +2669,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 	global_spinlock_lock();
 	int head = journal_events_head;
 	int tail = journal_events_tail;
-	unsigned ev_num = (unsigned) journal_events_num;
+	unsigned ev_num = (unsigned)journal_events_num;
 	global_spinlock_unlock();
 
 	if (!ev_num)
@@ -2694,7 +2688,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 
 	//поиск требуемого события
 	int index = tail;
-	while(index != head){  //поиск требуемого события
+	while (index != head) {  //поиск требуемого события
 		p = (journal_event_t*)(journal_events + journal_event_size * index);
 		if (p->unique_id == request->event_id)
 			break;
@@ -2710,7 +2704,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 	if (request->request == MSG_JOURNAL_REQUEST_GET) {
 
 		//отправляем найденное событие
-		
+
 		if (net_msg_buf_get_available_space(msg) < journal_msg_size) {
 			msg = net_get_msg_buf(journal_msg_size);
 			if (!msg)
@@ -2734,7 +2728,7 @@ void journal_request_callback(net_msg_t* msg, uint64_t channel) {
 		DEBUG_ADD_POINT(219);
 
 		//удаляем все события до найденого, включая и его тоже
-		int new_tail = index+1;
+		int new_tail = index + 1;
 		if (new_tail == journal_events_num_max)
 			new_tail = 0;
 
@@ -2786,12 +2780,12 @@ static unsigned osc_trigger_num;       //триггер.  выходной номер BOOL
 
 static unsigned osc_data_num;          //общее кол-во данных
 
-	   //количество данных для копирования
+									   //количество данных для копирования
 static unsigned osc_num_real;
 static unsigned osc_num_int;
 static unsigned osc_num_bool;  //всегда +1 буль к количеству из конфигурации для хранения триггера
 
-       //указатели на массивы указателей на данные в выходных таблицах мяда
+							   //указатели на массивы указателей на данные в выходных таблицах мяда
 static float*   (*osc_real_myd_ptrs)[];
 static int32_t* (*osc_int_myd_ptrs)[];
 static uint8_t* (*osc_bool_myd_ptrs)[];
@@ -2823,7 +2817,7 @@ typedef struct {
 	surza_time_t time;          //время срабатывания первого триггера
 	uint64_t     id;            //уникальный порядковый номер осциллограммы
 	unsigned     finished;      //признак готовности осциллограммы (все буферы записаны, готова к отправке)
-	//следующие поля используются только при отправке осциллограммы
+								//следующие поля используются только при отправке осциллограммы
 	unsigned     next_part;  //номер части, ожидаемый для следующей отправки
 	void*        next_buf;   //указатель на буфер, ожидаемый для следующей отправки части next_part
 } osc_internal_header_t;
@@ -2836,7 +2830,7 @@ static unsigned osc_internal_headers_tail;
 
 static uint64_t osc_id;   //счетчик уникальных номеров осциллограмм
 
-//----  используются только при отправке осциллограммы
+						  //----  используются только при отправке осциллограммы
 static struct oscilloscope_header_t osc_header;
 static osc_internal_header_t* osc_internal_header_to_send;
 static bool osc_header_en;
@@ -2848,7 +2842,7 @@ static unsigned osc_part_size_max;
 static unsigned osc_part_size_max_bufs;  //то же самое, но выраженное в количестве буферов (каждый размером osc_record_size_raw)
 
 
-//колбек для обработки сообщений для осциллогорафа
+										 //колбек для обработки сообщений для осциллогорафа
 void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel);
 
 
@@ -2918,7 +2912,7 @@ static bool init_oscilloscope() {
 	osc_num_int = 0;
 	osc_num_bool = 0;
 
-	
+
 	//получение количества данных
 	param_tree_node_t* node;
 	bool err = false;
@@ -3044,10 +3038,10 @@ static bool init_oscilloscope() {
 	while (osc_record_size % 4)
 		osc_record_size++;
 
-	
+
 
 	//ДАЛЕЕ СОЗДАНИЕ БУФЕРОВ, ОПРЕДЕЛЕНИЕ ТОЧЕК СРАБАТЫВАНИЯ В ТАКТАХ СУРЗЫ, ДЛИНЫ И Т.П.
-	
+
 	//подсчет минимального количества буферов для осциллограммы
 	osc_min_length = (osc_min_length_msec * 1000) / SurzaPeriod();
 
@@ -3059,7 +3053,7 @@ static bool init_oscilloscope() {
 	//ограничение на слишком большое количество буферов когда мало полезной нагрузки и накладные ресурсы начинают занимать сравнимое количество памяти
 	if (osc_bufs_total > osc_min_length * OSC_MAX_LENGTH_FACTOR)
 		osc_bufs_total = osc_min_length * OSC_MAX_LENGTH_FACTOR;
-		
+
 	osc_buf_pool_num = buf_pool_add_pool(osc_record_size, osc_bufs_total);
 	if (osc_buf_pool_num<0) {
 		osc_free_memory();
@@ -3070,26 +3064,26 @@ static bool init_oscilloscope() {
 	float total_size = (float)(osc_record_size*osc_bufs_total) / (float)(1024 * 1024);
 	float total_time = ((float)osc_bufs_total*SurzaPeriod()) / 1000000.0f;
 	LOG_AND_SCREEN("OSCILLOSCOPE: memory usage: %.1f Mbytes, max osc length = %.1f seconds", total_size, total_time);
-	
+
 	//указатели готовых осциллограмм
 	osc_internal_headers_head = 0;
 	osc_internal_headers_tail = 0;
 	//сброс признака готовности
 	osc_internal_headers[osc_internal_headers_head].finished = 0;
-	
-	
-	 //уникальный номер
-	 osc_id = launchnum_get();
-	 osc_id <<= 32;
 
-	 //заголовок готовой к отправке осциллограммы
-	 osc_header_en = false;
-	 osc_internal_header_to_send = NULL;
 
-	 //расчет максимально  допустимой передаваемой части в сообщении. высчитывается из OSC_NET_MSG_SIZE_MAX,
-	 //обязательно  кратна  osc_record_size_raw
-	 osc_part_size_max_bufs = OSC_NET_MSG_SIZE_MAX / osc_record_size_raw;
-	 osc_part_size_max = osc_part_size_max_bufs * osc_record_size_raw;
+	//уникальный номер
+	osc_id = launchnum_get();
+	osc_id <<= 32;
+
+	//заголовок готовой к отправке осциллограммы
+	osc_header_en = false;
+	osc_internal_header_to_send = NULL;
+
+	//расчет максимально  допустимой передаваемой части в сообщении. высчитывается из OSC_NET_MSG_SIZE_MAX,
+	//обязательно  кратна  osc_record_size_raw
+	osc_part_size_max_bufs = OSC_NET_MSG_SIZE_MAX / osc_record_size_raw;
+	osc_part_size_max = osc_part_size_max_bufs * osc_record_size_raw;
 
 	//прием запросов по сети на отправку и удаление осциллограмм 
 	net_add_dispatcher((uint8_t)NET_MSG_OSCILLOSCOPE, oscilloscope_net_callback);
@@ -3097,7 +3091,7 @@ static bool init_oscilloscope() {
 	oscilloscope_init_ok = true;
 
 	return true;
-    
+
 }
 
 
@@ -3183,8 +3177,8 @@ void oscilloscope_add() {
 	DEBUG_ADD_POINT(226);
 
 	static int state = OSC_ADD_STATE_INITIAL;
-	bool exit ;
-	
+	bool exit;
+
 	do {
 		exit = true;
 
@@ -3195,8 +3189,8 @@ void oscilloscope_add() {
 
 			//если есть уже готовые осциллограммы (указатели головы и хвоста отличаются, либо добавлена только одна большая
 			//осциллограмма и указатель головы в таком случае еще не передвинут (osc_internal_headers_head == osc_internal_headers_tail), но установлен признак finished)
-			if(   osc_internal_headers_head != osc_internal_headers_tail
-			  || (/*osc_internal_headers_head == osc_internal_headers_tail && */ osc_internal_headers[osc_internal_headers_head].finished)){
+			if (osc_internal_headers_head != osc_internal_headers_tail
+				|| (/*osc_internal_headers_head == osc_internal_headers_tail && */ osc_internal_headers[osc_internal_headers_head].finished)) {
 				//попытка взять новую свободную структуру
 				unsigned tmp = osc_internal_headers_head + 1;
 				if (tmp == OSC_INTERNAL_HEADERS_MAX)
@@ -3204,12 +3198,12 @@ void oscilloscope_add() {
 				if (tmp == osc_internal_headers_tail) //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
 					break;
 				osc_internal_headers_head = tmp;
-		    }
+			}
 
 			state = OSC_ADD_STATE_WAIT_BUFS;
-		    exit = false;
+			exit = false;
 		}
-		    break;
+		break;
 
 		case OSC_ADD_STATE_WAIT_BUFS:
 		{
@@ -3240,7 +3234,7 @@ void oscilloscope_add() {
 			state = OSC_ADD_STATE_PREHISTORY;
 			exit = false;
 		}
-			break;
+		break;
 
 
 		case OSC_ADD_STATE_PREHISTORY:
@@ -3250,7 +3244,7 @@ void oscilloscope_add() {
 			//получение нового буфера
 			void* new_buf = buf_pool_get_fast(osc_buf_pool_num);  //без проверки. буферы точно должны быть (условия прихода в OSC_ADD_STATE_PREHISTORY)
 
-			//заполнение новыми данными
+																  //заполнение новыми данными
 			osc_copy_data(new_buf);
 
 			//указатель на слудующий буфер равен NULL (буфер последний в цепочке)
@@ -3269,7 +3263,7 @@ void oscilloscope_add() {
 			header->n_to_complete--;
 
 			DEBUG_ADD_POINT(230);
-			
+
 			//если преждевременно сработал триггер (до накопления всей предыстории)
 			if (trigger) {
 
@@ -3294,7 +3288,7 @@ void oscilloscope_add() {
 
 
 		}
-			break;
+		break;
 
 
 		case OSC_ADD_STATE_WAIT_TRIGGER:
@@ -3334,10 +3328,10 @@ void oscilloscope_add() {
 				header->time = time_get();
 				state = OSC_ADD_STATE_HISTORY;
 			}
-			
+
 
 		}
-			break;
+		break;
 
 
 		case OSC_ADD_STATE_HISTORY:
@@ -3379,7 +3373,7 @@ void oscilloscope_add() {
 			DEBUG_ADD_POINT(238);
 
 			//сохранение указателя на последнюю точку перед записью дополнительных точек
-			if(header->n_to_complete == osc_trigger_point)
+			if (header->n_to_complete == osc_trigger_point)
 				main_points_last_buf = new_buf;
 
 
@@ -3387,14 +3381,14 @@ void oscilloscope_add() {
 			if (trigger)
 				header->n_to_complete = osc_min_length; // длина осциллограммы после триггера + величина дополнительной предыстории (по итогу это равно просто минимальной длине осциллограммы )
 
-			//проверка на конец записи осциллограммы
+														//проверка на конец записи осциллограммы
 			if (header->n_to_complete == 0) {  //сохранение осциллограммы
 
 				DEBUG_ADD_POINT(239);
-				
+
 				header->id = osc_id++;
 				header->finished = 1;
-				
+
 				//получение новой структуры под следующую осциллограмму и перенос предыстории в нее
 				//при отсутствии структуры для новой осциллограммы дополнительные данные остаются в текущей с переходом в изначальное состояние (чтобы избежать долгое высвобождение буферов в прерывании)
 
@@ -3404,9 +3398,9 @@ void oscilloscope_add() {
 					tmp = 0;
 				if (tmp == osc_internal_headers_tail) { //если уткнулись в хвост (структуры забиты готовыми осциллограммами)
 
-					//переход в начальное состояние
-					//пока не будет получено необходимого количества буферов - процесс осциллографирования приостанавливается
-					//(скопилось слишком много неотправленных осциллограмм, либо одна большая, занявшая все доступные буферы)
+														//переход в начальное состояние
+														//пока не будет получено необходимого количества буферов - процесс осциллографирования приостанавливается
+														//(скопилось слишком много неотправленных осциллограмм, либо одна большая, занявшая все доступные буферы)
 					state = OSC_ADD_STATE_INITIAL;
 
 				}
@@ -3444,7 +3438,7 @@ void oscilloscope_add() {
 			}
 
 		}
-			break;
+		break;
 
 		}
 
@@ -3465,7 +3459,7 @@ void oscilloscope_update() {
 	if (!osc_header_en) {
 
 		DEBUG_ADD_POINT(242);
-		
+
 		bool new_osc_flag = false;
 
 		global_spinlock_lock();
@@ -3482,22 +3476,22 @@ void oscilloscope_update() {
 
 			osc_header.id = internal_header->id;
 			osc_header.total_length = internal_header->num;
-			osc_header.step_time_nsecs = SurzaPeriod()*1000;
+			osc_header.step_time_nsecs = SurzaPeriod() * 1000;
 			osc_header.num_real = osc_num_real;
 			osc_header.num_int = osc_num_int;
 			osc_header.num_bool = osc_num_bool;
 			osc_header.total_length_bytes = osc_record_size_raw * osc_header.total_length;
-			osc_header.parts = (osc_header.total_length_bytes / osc_part_size_max) + ((osc_header.total_length_bytes%osc_part_size_max)?1:0);
+			osc_header.parts = (osc_header.total_length_bytes / osc_part_size_max) + ((osc_header.total_length_bytes%osc_part_size_max) ? 1 : 0);
 			osc_header.time = SurzaTime_sub(internal_header->time, internal_header->first_trigger*osc_header.step_time_nsecs);
 
 			//заполнение полей для отправки
 			osc_internal_header_to_send = internal_header;
 			osc_internal_header_to_send->next_part = 0;
 			osc_internal_header_to_send->next_buf = internal_header->first;
-			
+
 
 			//отправить широковещательное сообщение OSCILLOSCOPE_MSG_NEW
-			net_msg_t* msg = net_get_msg_buf(sizeof(msg_type_oscilloscope_t)+sizeof(oscilloscope_new_t));
+			net_msg_t* msg = net_get_msg_buf(sizeof(msg_type_oscilloscope_t) + sizeof(oscilloscope_new_t));
 			if (msg) {
 
 				DEBUG_ADD_POINT(244);
@@ -3512,7 +3506,7 @@ void oscilloscope_update() {
 
 				DEBUG_ADD_POINT(245);
 
-				memcpy((char*)(osc_msg+1), &osc_header, sizeof(oscilloscope_new_t));
+				memcpy((char*)(osc_msg + 1), &osc_header, sizeof(oscilloscope_new_t));
 
 				DEBUG_ADD_POINT(246);
 
@@ -3553,42 +3547,42 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 	//отправка ответов
 	switch (osc_msg->type) {
 	case OSCILLOSCOPE_MSG_REQUEST_NEW:
-		{
-		    DEBUG_ADD_POINT(262);
+	{
+		DEBUG_ADD_POINT(262);
 
-			const unsigned msg_size = sizeof(msg_type_oscilloscope_t) + sizeof(oscilloscope_new_t);
-			if (net_msg_buf_get_available_space(msg) < msg_size) {
-				msg = net_get_msg_buf(msg_size);
-				if (!msg)
-					return;
-			}
-			else {
-				msg->size = msg_size;
-			}
-
-			msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
-			msg->subtype = 0;
-
-			DEBUG_ADD_POINT(263);
-
-			msg_type_oscilloscope_t* osc_msg = (msg_type_oscilloscope_t*)&msg->data[0];
-			osc_msg->type = OSCILLOSCOPE_MSG_NEW;
-			osc_msg->size = sizeof(oscilloscope_new_t);
-			memcpy(osc_msg->md5_hash, settings_header->hash, 16);
-
-			DEBUG_ADD_POINT(264);
-
-
-			memcpy((char*)(osc_msg+1), &osc_header, sizeof(oscilloscope_new_t));
-
-			DEBUG_ADD_POINT(265);
-
-			net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
+		const unsigned msg_size = sizeof(msg_type_oscilloscope_t) + sizeof(oscilloscope_new_t);
+		if (net_msg_buf_get_available_space(msg) < msg_size) {
+			msg = net_get_msg_buf(msg_size);
+			if (!msg)
+				return;
 		}
-		break;
+		else {
+			msg->size = msg_size;
+		}
+
+		msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
+		msg->subtype = 0;
+
+		DEBUG_ADD_POINT(263);
+
+		msg_type_oscilloscope_t* osc_msg = (msg_type_oscilloscope_t*)&msg->data[0];
+		osc_msg->type = OSCILLOSCOPE_MSG_NEW;
+		osc_msg->size = sizeof(oscilloscope_new_t);
+		memcpy(osc_msg->md5_hash, settings_header->hash, 16);
+
+		DEBUG_ADD_POINT(264);
+
+
+		memcpy((char*)(osc_msg + 1), &osc_header, sizeof(oscilloscope_new_t));
+
+		DEBUG_ADD_POINT(265);
+
+		net_send_msg(msg, NET_PRIORITY_MEDIUM, channel);
+	}
+	break;
 
 	case OSCILLOSCOPE_MSG_REQUEST_DATA:
-	    {
+	{
 		DEBUG_ADD_POINT(266);
 
 		if (osc_msg->size < sizeof(oscilloscope_request_data_t))
@@ -3596,7 +3590,7 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 
 		oscilloscope_request_data_t* request = (oscilloscope_request_data_t*)(osc_msg + 1);
 		if (request->id != osc_header.id
-			|| request->part >= osc_header.parts )
+			|| request->part >= osc_header.parts)
 			return;
 
 		unsigned part = request->part;
@@ -3614,7 +3608,7 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 			msg->size = msg_size;
 		}
 
-		
+
 		msg->type = (uint8_t)NET_MSG_OSCILLOSCOPE;
 		msg->subtype = 0;
 
@@ -3648,13 +3642,13 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 			buf = osc_internal_header_to_send->first;
 
 			if (osc_internal_header_to_send->next_part < part) { //очень маловероятно, но пусть будет
-				//сокращаем поиск, стартуя с уже известного сохраненного буфера
+																 //сокращаем поиск, стартуя с уже известного сохраненного буфера
 				n_bufs -= osc_internal_header_to_send->next_part * osc_part_size_max_bufs;
 				buf = osc_internal_header_to_send->next_buf;
 			}
 
 			DEBUG_ADD_POINT(271);
-			
+
 			while (n_bufs) {
 				n_bufs--;
 				if (buf == NULL) {
@@ -3663,11 +3657,11 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 				}
 				buf = *(void**)buf;
 			}
-			
+
 		}
 
 		DEBUG_ADD_POINT(272);
-		
+
 		//копирование данных
 		char* dst_ptr = (char*)(osc_data + 1);
 		while (bufs_to_copy) {
@@ -3694,8 +3688,8 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 
 		net_send_msg(msg, NET_PRIORITY_LOW, channel);
 
-	    }
-		break;
+	}
+	break;
 
 	case OSCILLOSCOPE_MSG_REQUEST_DELETE:
 
@@ -3713,19 +3707,19 @@ void oscilloscope_net_callback(net_msg_t* msg, uint64_t channel) {
 		//освободить все занятые буферы
 		void* buf;
 		do {
-			
+
 			buf = osc_internal_header_to_send->first;
 
 			osc_internal_header_to_send->first = *(void**)osc_internal_header_to_send->first;
 
 			global_spinlock_lock();
-			   buf_pool_free_fast(osc_buf_pool_num, buf);
+			buf_pool_free_fast(osc_buf_pool_num, buf);
 			global_spinlock_unlock();
 
 		} while (buf != osc_internal_header_to_send->last);
 
 		DEBUG_ADD_POINT(276);
-	    		
+
 
 		//передвинуть указатель хвоста в очереди осциллограмм
 		global_spinlock_lock();
@@ -3774,13 +3768,13 @@ void osc_test_func() {
 		test_f = 0.0f;
 	test_i++;
 	test_b = !test_b;
-	
+
 
 	if ((step % 7000) == 0) {
 		MATH_IO_BOOL_OUT[11] = 1;
 	}
 	else MATH_IO_BOOL_OUT[11] = 0;
-	
+
 
 	MATH_IO_REAL_OUT[17] = test_f;
 	MATH_IO_REAL_OUT[7] = test_f + 1.0f;
@@ -3791,8 +3785,8 @@ void osc_test_func() {
 	MATH_IO_BOOL_OUT[7] = test_b;
 	MATH_IO_BOOL_OUT[29] = !test_b;
 
-	
-    oscilloscope_add();
+
+	oscilloscope_add();
 
 }
 
@@ -3900,24 +3894,24 @@ void set_inputs_net_callback(net_msg_t* msg, uint64_t channel) {
 					set_inputs_index_f[set_inputs_data_f_ptr] = index;
 					set_inputs_data_f_ptr++;
 				}
-			    global_spinlock_unlock();
+				global_spinlock_unlock();
 			}
 			break;
 		case SURZA_INPUT_TYPE_INT32:
 			if (index < math_int_in_num) {
 				global_spinlock_lock();
-				 set_inputs_data_i[set_inputs_data_i_ptr] = val->val.i;
-				 set_inputs_index_i[set_inputs_data_i_ptr] = index;
-				 set_inputs_data_i_ptr++;
+				set_inputs_data_i[set_inputs_data_i_ptr] = val->val.i;
+				set_inputs_index_i[set_inputs_data_i_ptr] = index;
+				set_inputs_data_i_ptr++;
 				global_spinlock_unlock();
 			}
 			break;
 		case SURZA_INPUT_TYPE_BOOL:
 			if (index < math_bool_in_num) {
 				global_spinlock_lock();
-				 set_inputs_data_b[set_inputs_data_b_ptr] = val->val.b ? true : false;
-				 set_inputs_index_b[set_inputs_data_b_ptr] = index;
-				 set_inputs_data_b_ptr++;
+				set_inputs_data_b[set_inputs_data_b_ptr] = val->val.b ? true : false;
+				set_inputs_index_b[set_inputs_data_b_ptr] = index;
+				set_inputs_data_b_ptr++;
 				global_spinlock_unlock();
 			}
 			break;
@@ -3945,7 +3939,7 @@ void set_inputs() {
 		set_inputs_data_b_ptr--;
 		math_bool_in[set_inputs_index_b[set_inputs_data_b_ptr]] = set_inputs_data_b[set_inputs_data_b_ptr];
 	}
-	
+
 }
 
 
@@ -4027,7 +4021,7 @@ static bool init_commands() {
 	for (unsigned i = 0; i < math_bool_in_num; i++)
 		commands_allowed[i] = false;
 
-	
+
 	//получение количества данных
 	param_tree_node_t* node;
 	unsigned num;
@@ -4047,7 +4041,7 @@ static bool init_commands() {
 	}
 
 	net_add_dispatcher((uint8_t)NET_MSG_COMMAND, commands_net_callback);
-	
+
 	commands_init_ok = true;
 
 	return true;
@@ -4073,6 +4067,7 @@ static void commands_apply() {
 
 
 
+
 //------------------------------------------------------------------------
 //  Измеритель шага
 //------------------------------------------------------------------------
@@ -4091,11 +4086,7 @@ static unsigned steptime_type;  //тип используемого измерителя
 
 uint64_t tsc_reg_start, tsc_reg_stop;
 
-<<<<<<< HEAD
-static bool init_steptime(){
-=======
 static bool init_steptime() {
->>>>>>> master
 
 	steptime_init_ok = false;
 
@@ -4111,16 +4102,6 @@ static bool init_steptime() {
 	param_tree_node_t* item;
 
 	item = ParamTree_Find(node, "type", PARAM_TREE_SEARCH_ITEM);
-<<<<<<< HEAD
-	if (item && item->value && sscanf_s(item->value, "%u", &steptime_type) > 0){
-		if (steptime_type != STEPTIME_DISABLE && steptime_type != STEPTIME_FIU && steptime_type != STEPTIME_INTERNAL)
-			return false;
-	} else {
-		steptime_type = STEPTIME_DISABLE;
-		return true;
-	}
-	
-=======
 	if (item && item->value && sscanf_s(item->value, "%u", &steptime_type) > 0) {
 		if (steptime_type != STEPTIME_DISABLE && steptime_type != STEPTIME_FIU && steptime_type != STEPTIME_INTERNAL)
 			return false;
@@ -4130,7 +4111,6 @@ static bool init_steptime() {
 		return true;
 	}
 
->>>>>>> master
 
 	if (steptime_type == STEPTIME_FIU) {
 		item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
@@ -4173,20 +4153,12 @@ static void steptime_update() {
 		return;
 
 	if (steptime_type == STEPTIME_FIU)
-<<<<<<< HEAD
-	   steptime_time = RTInW(steptime_adr);  //измеритель фиу
-=======
 		steptime_time = RTInW(steptime_adr);  //измеритель фиу
->>>>>>> master
 	else {
 		//внутренний измеритель
 		tsc_reg_stop = get_cpu_clks_64() - tsc_reg_start;
 	}
-<<<<<<< HEAD
-	
-=======
 
->>>>>>> master
 }
 
 //копирование времени такта в МЯД
@@ -4201,15 +4173,10 @@ static void steptime_copy() {
 	}
 	else {
 		//для внутреннего измерителя
-<<<<<<< HEAD
-		MATH_IO_INT_IN[steptime_input] = (int32_t)(tsc_reg_stop/STEPTIME_CPU_FREQUENCY_MHZ);
-=======
 		MATH_IO_INT_IN[steptime_input] = (int32_t)(tsc_reg_stop / STEPTIME_CPU_FREQUENCY_MHZ);
->>>>>>> master
 	}
 
 }
-
 
 
 
@@ -4256,7 +4223,7 @@ static bool init_shu() {
 	for (node = ParamTree_Child(shu_node); node; node = node->next, shu_n++) {
 
 		unsigned u32;
-		
+
 		item = ParamTree_Find(node, "first_reg_adr", PARAM_TREE_SEARCH_ITEM);
 		if (item && item->value) {
 			u32 = UINT_MAX;
@@ -4333,12 +4300,12 @@ static bool init_shu() {
 
 		shu_debug_mode_one[shu_n] = false;
 		item = ParamTree_Find(node, "debug_one_cell", PARAM_TREE_SEARCH_ITEM);
-		if(item && item->value[0] == '1')
+		if (item && item->value[0] == '1')
 			shu_debug_mode_one[shu_n] = true;
 
 		shu_debug_mode_no_fb[shu_n] = false;
 		item = ParamTree_Find(node, "debug_no_fb", PARAM_TREE_SEARCH_ITEM);
-		if(item && item->value[0] == '1')
+		if (item && item->value[0] == '1')
 			shu_debug_mode_no_fb[shu_n] = true;
 
 
@@ -4354,7 +4321,7 @@ static bool init_shu() {
 
 		if (shu_first_input[shu_n] >= math_bool_in_num
 			|| shu_reset_output[shu_n] >= math_bool_out_num
-			|| shu_first_input[shu_n]+shu_n_of_regs[shu_n]*8 > math_bool_in_num)
+			|| shu_first_input[shu_n] + shu_n_of_regs[shu_n] * 8 > math_bool_in_num)
 			return false;
 
 
@@ -4392,14 +4359,14 @@ static void shu_update() {
 			continue;
 
 		//считывание очередного регистра
-		u8 = RTIn(shu_first_adr[i]+shu_reg_counter[i]);
+		u8 = RTIn(shu_first_adr[i] + shu_reg_counter[i]);
 
 		boolean_T* ptr = &MATH_IO_BOOL_IN[shu_first_input[i] + shu_reg_counter[i] * 8];
 		for (mask = 0x01; mask; mask <<= 1, ptr++)
-			*ptr = (mask&u8?true:false);
+			*ptr = (mask&u8 ? true : false);
 
 		shu_reg_counter[i]++;
-		if(shu_reg_counter[i]==shu_status_num[i])  //пропуск статуcного регистра
+		if (shu_reg_counter[i] == shu_status_num[i])  //пропуск статуcного регистра
 			shu_reg_counter[i]++;
 		if (shu_reg_counter[i] >= shu_n_of_regs[i])
 			shu_reg_counter[i] = 0;
@@ -4471,21 +4438,21 @@ static bool init_isa() {
 		if (isa_in_table_size) {
 
 			//выделение памяти под таблицу
-			isa_in_table = (isa_table_t*) malloc(sizeof(isa_table_t)*isa_in_table_size);
+			isa_in_table = (isa_table_t*)malloc(sizeof(isa_table_t)*isa_in_table_size);
 			if (isa_in_table) {
 
 				//получение данных
 				param_tree_node_t* node;
 				param_tree_node_t* item;
 				bool err = false;
-				unsigned u32, cnt=0;
+				unsigned u32, cnt = 0;
 				isa_table_t* ptr = isa_in_table;
 
 				for (node = ParamTree_Child(isa_node); node && !err && cnt<isa_in_table_size; node = node->next, ptr++) {
 
 					item = ParamTree_Find(node, "data_num", PARAM_TREE_SEARCH_ITEM);
 					if (!item || !item->value)	err = true;
-					else if (sscanf_s(item->value, "%u", &u32) <= 0  || u32 >= math_int_in_num ) err = true;
+					else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_int_in_num) err = true;
 					else ptr->data = &MATH_IO_INT_IN[u32];
 
 					if (!err) {
@@ -4586,7 +4553,7 @@ static void isa_read() {
 	if (isa_first_call) {
 		isa_first_call = false;
 		return;
-    }
+	}
 
 	isa_table_t* ptr = isa_in_table;
 	for (unsigned i = 0; i < isa_in_table_size; i++, ptr++)
@@ -4600,7 +4567,7 @@ static void isa_write() {
 	isa_table_t* ptr = isa_out_table;
 	for (unsigned i = 0; i < isa_out_table_size; i++, ptr++)
 		if (*(ptr->control))
-			RTOut(ptr->adr,  (uint8_t)(*(ptr->data) & 0xff));
+			RTOut(ptr->adr, (uint8_t)(*(ptr->data) & 0xff));
 
 }
 
@@ -4638,7 +4605,7 @@ unsigned ethernet_type_size(enum ethernet_data_type type) {
 	case ETH_UINT16: size = 2; break;
 	case ETH_BOOL:
 	case ETH_INT8:
-	case ETH_UINT8: size = 1; break;	
+	case ETH_UINT8: size = 1; break;
 	default: break;
 	}
 	return size;
@@ -4710,7 +4677,7 @@ static bool init_ethernet() {
 						item = ParamTree_Find(node, "num", PARAM_TREE_SEARCH_ITEM);
 						if (!item || !item->value)	err = true;
 						else if (sscanf_s(item->value, "%u", &u32) <= 0 || u32 >= math_type_data_num[ptr->logic_type]) err = true;
-						else ptr->logic_data_ptr = math_type_data_ptr[ptr->logic_type] + u32*(ptr->logic_type==LOGIC_TYPE_BOOL_IN?1:4);
+						else ptr->logic_data_ptr = math_type_data_ptr[ptr->logic_type] + u32 * (ptr->logic_type == LOGIC_TYPE_BOOL_IN ? 1 : 4);
 					}
 
 					if (!err) {
@@ -4725,7 +4692,7 @@ static bool init_ethernet() {
 						item = ParamTree_Find(node, "adr", PARAM_TREE_SEARCH_ITEM);
 						if (!item || !item->value)	err = true;
 						else if (sscanf_s(item->value, "%u", &u32) <= 0
-							||	(ptr->msg_type==ETH_BOOL?u32/8:u32) + ethernet_type_size(ptr->msg_type) > ETHERNET_MAX_DATA ) err = true;
+							|| (ptr->msg_type == ETH_BOOL ? u32 / 8 : u32) + ethernet_type_size(ptr->msg_type) > ETHERNET_MAX_DATA) err = true;
 						else ptr->msg_offset = u32;
 					}
 
@@ -4735,7 +4702,7 @@ static bool init_ethernet() {
 						if (max_byte > ethernet_input_max)
 							ethernet_input_max = max_byte;
 					}
-					
+
 				}
 
 				if (err) {
@@ -4847,36 +4814,37 @@ static void ethernet_input(const void* data_in, unsigned bytes) {
 	for (unsigned i = 0; i < ethernet_input_table_size; i++, ptr++) {
 
 		switch (ptr->msg_type) {
-			case ETH_FLOAT:
-				f32 = *(float*)ETH_PTR_IN;
-                #if ETHERNET_CHECK_FLOAT == 1
-				if (!_finite(f32))
-					continue;
-                #endif
-				break;
-			case ETH_INT32:	 i32 = *(int32_t*)ETH_PTR_IN; break;
-			case ETH_INT16:  i32 = (int32_t) *(int16_t*)ETH_PTR_IN; break;
-			case ETH_UINT16: i32 = (int32_t) *(uint16_t*)ETH_PTR_IN; break;
-			case ETH_INT8:   i32 = (int32_t) *(int8_t*)ETH_PTR_IN; break;
-			case ETH_UINT8:  i32 = (int32_t) *(uint8_t*)ETH_PTR_IN; break;
-			case ETH_BOOL:   i32 = (int32_t) *((uint8_t*)data_in + ptr->msg_offset/8);
-			                 i32 = (i32 >> (ptr->msg_offset & 0x07)) & 0x01;
-						     break;
-			default: continue;
+		case ETH_FLOAT:
+			f32 = *(float*)ETH_PTR_IN;
+#if ETHERNET_CHECK_FLOAT == 1
+			if (!_finite(f32))
+				continue;
+#endif
+			break;
+		case ETH_INT32:	 i32 = *(int32_t*)ETH_PTR_IN; break;
+		case ETH_INT16:  i32 = (int32_t) *(int16_t*)ETH_PTR_IN; break;
+		case ETH_UINT16: i32 = (int32_t) *(uint16_t*)ETH_PTR_IN; break;
+		case ETH_INT8:   i32 = (int32_t) *(int8_t*)ETH_PTR_IN; break;
+		case ETH_UINT8:  i32 = (int32_t) *(uint8_t*)ETH_PTR_IN; break;
+		case ETH_BOOL:   i32 = (int32_t) *((uint8_t*)data_in + ptr->msg_offset / 8);
+			i32 = (i32 >> (ptr->msg_offset & 0x07)) & 0x01;
+			break;
+		default: continue;
 		}
 
 
 		if (ptr->msg_type == ETH_FLOAT) {
 			switch (ptr->logic_type) {
 			case LOGIC_TYPE_REAL_IN: *(float*)ptr->logic_data_ptr = f32; break;
-			case LOGIC_TYPE_INT_IN:  if(f32 > (float)(INT32_MAX)) *(int32_t*)ptr->logic_data_ptr = INT32_MAX;
-									 else if(f32 < (float)(INT32_MIN)) *(int32_t*)ptr->logic_data_ptr = INT32_MIN;
+			case LOGIC_TYPE_INT_IN:  if (f32 > (float)(INT32_MAX)) *(int32_t*)ptr->logic_data_ptr = INT32_MAX;
+									 else if (f32 < (float)(INT32_MIN)) *(int32_t*)ptr->logic_data_ptr = INT32_MIN;
 									 else *(int32_t*)ptr->logic_data_ptr = (int32_t)f32;
 									 break;
 			case LOGIC_TYPE_BOOL_IN: *(boolean_T*)ptr->logic_data_ptr = (f32 == 0 ? false : true); break;
 			default: break;
 			}
-		} else {
+		}
+		else {
 			switch (ptr->logic_type) {
 			case LOGIC_TYPE_REAL_IN: *(float*)ptr->logic_data_ptr = (float)i32; break;
 			case LOGIC_TYPE_INT_IN:	*(int32_t*)ptr->logic_data_ptr = i32; break;
@@ -4912,10 +4880,10 @@ static unsigned ethernet_output(void* data_out) {
 		else {
 			switch (ptr->logic_type) {
 			case LOGIC_TYPE_REAL_OUT:  f32 = *(float*)ptr->logic_data_ptr; break;
-				                       if (f32 > (float)(INT32_MAX)) i32 = INT32_MAX;
-									   else if (f32 < (float)(INT32_MAX)) i32 = INT32_MIN;
-									   else i32 = (int32_t)f32;
-									   break;
+				if (f32 > (float)(INT32_MAX)) i32 = INT32_MAX;
+				else if (f32 < (float)(INT32_MAX)) i32 = INT32_MIN;
+				else i32 = (int32_t)f32;
+				break;
 			case LOGIC_TYPE_INT_OUT:   i32 = *(int32_t*)ptr->logic_data_ptr; break;
 			case LOGIC_TYPE_BOOL_OUT:  i32 = (*(boolean_T*)ptr->logic_data_ptr) ? 1 : 0; break;
 			default: continue;
@@ -4926,7 +4894,7 @@ static unsigned ethernet_output(void* data_out) {
 		switch (ptr->msg_type) {
 		case ETH_FLOAT:  *(float*)ETH_PTR_OUT = f32; break;
 		case ETH_INT32:	 *(int32_t*)ETH_PTR_OUT = i32; break;
-		case ETH_INT16:  if(i32>INT16_MAX) *(int16_t*)ETH_PTR_OUT = INT16_MAX;
+		case ETH_INT16:  if (i32>INT16_MAX) *(int16_t*)ETH_PTR_OUT = INT16_MAX;
 						 else if (i32<INT16_MIN) *(int16_t*)ETH_PTR_OUT = INT16_MIN;
 						 else *(int16_t*)ETH_PTR_OUT = (int16_t)i32;
 						 break;
@@ -4943,10 +4911,10 @@ static unsigned ethernet_output(void* data_out) {
 						 else *(uint8_t*)ETH_PTR_OUT = (uint8_t)i32;
 						 break;
 		case ETH_BOOL:   if (i32)
-			                 *((uint8_t*)data_out + ptr->msg_offset / 8)  |= (0x01 << (ptr->msg_offset & 0x07));
+			*((uint8_t*)data_out + ptr->msg_offset / 8) |= (0x01 << (ptr->msg_offset & 0x07));
 						 else
 							 *((uint8_t*)data_out + ptr->msg_offset / 8) &= ~(0x01 << (ptr->msg_offset & 0x07));
-						 break;
+			break;
 		default: continue;
 		}
 
@@ -4982,10 +4950,10 @@ void delta_HMI_init_regs() {
 	delta_HMI_f = NULL;
 	delta_HMI_i = NULL;
 	delta_HMI_b = NULL;
-	
-	delta_HMI_f = (float*) malloc(math_real_out_num * 4);
-	delta_HMI_i = (int32_t*) malloc(math_int_out_num * 4);
-	delta_HMI_b = (uint8_t*) malloc(math_bool_out_num);
+
+	delta_HMI_f = (float*)malloc(math_real_out_num * 4);
+	delta_HMI_i = (int32_t*)malloc(math_int_out_num * 4);
+	delta_HMI_b = (uint8_t*)malloc(math_bool_out_num);
 
 	if (delta_HMI_f == NULL || delta_HMI_i == NULL || delta_HMI_b == NULL) {
 		if (delta_HMI_f) free(delta_HMI_f);
@@ -4993,7 +4961,7 @@ void delta_HMI_init_regs() {
 		if (delta_HMI_b) free(delta_HMI_b);
 		return;
 	}
-	
+
 	delta_HMI_init_flag = true;
 }
 
@@ -5049,8 +5017,8 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 	static unsigned type = 0;
 	static unsigned n = 0;
 
-	unsigned num_to_copy=0;
-	
+	unsigned num_to_copy = 0;
+
 	switch (type) {
 	case 0:
 		DEBUG_ADD_POINT(361);
@@ -5058,10 +5026,10 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 			num_to_copy = (math_real_out_num - n);
 		else
 			num_to_copy = DELTA_MAX_REGS_TO_SEND / 2;
-		
+
 		for (unsigned i = n; i < n + num_to_copy; i++, ptr += 2)
 			*(float*)ptr = delta_HMI_f[i];
-		
+
 		*num = num_to_copy * 2;
 		*start_reg = DELTA_REAL_START_REG + n * 2;
 
@@ -5096,52 +5064,52 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 
 	case 2:
 		DEBUG_ADD_POINT(363);
-	    {
-		unsigned need_regs = (math_bool_out_num - n);
-		if (need_regs) {
-			need_regs--;
-			need_regs /= 16;
-			need_regs++;
-		}
-
-		if (need_regs <= DELTA_MAX_REGS_TO_SEND)
-			num_to_copy = (math_bool_out_num - n);
-		else {
-			num_to_copy = DELTA_MAX_REGS_TO_SEND * 16;
-			need_regs = DELTA_MAX_REGS_TO_SEND;
-		}
-
-
-		uint16_t mask = 0x0001;
-		for (unsigned i = n; i < n + num_to_copy; i++){
-			
-			if(mask==0x0001)  //тереть именно здесь, чтоб не вылезти за максимально допустимый регистр DELTA_MAX_REGS_TO_SEND
-				*ptr = 0;
-
-			if (delta_HMI_b[i])
-				*ptr |= mask;
-
-			mask <<= 1;
-			if (!mask) {
-				mask = 0x0001;
-				ptr++;
+		{
+			unsigned need_regs = (math_bool_out_num - n);
+			if (need_regs) {
+				need_regs--;
+				need_regs /= 16;
+				need_regs++;
 			}
-			
+
+			if (need_regs <= DELTA_MAX_REGS_TO_SEND)
+				num_to_copy = (math_bool_out_num - n);
+			else {
+				num_to_copy = DELTA_MAX_REGS_TO_SEND * 16;
+				need_regs = DELTA_MAX_REGS_TO_SEND;
+			}
+
+
+			uint16_t mask = 0x0001;
+			for (unsigned i = n; i < n + num_to_copy; i++) {
+
+				if (mask == 0x0001)  //тереть именно здесь, чтоб не вылезти за максимально допустимый регистр DELTA_MAX_REGS_TO_SEND
+					*ptr = 0;
+
+				if (delta_HMI_b[i])
+					*ptr |= mask;
+
+				mask <<= 1;
+				if (!mask) {
+					mask = 0x0001;
+					ptr++;
+				}
+
+			}
+
+			*num = need_regs;
+			*start_reg = DELTA_BOOL_START_REG + n / 16;
+
+			n += num_to_copy;
+			if (n >= math_bool_out_num) {
+				type = 0;
+				n = 0;
+
+				update = false;    //закончили один цикл отправки всего
+			}
+
+
 		}
-
-		*num = need_regs;
-		*start_reg = DELTA_BOOL_START_REG + n / 16;
-		
-		n += num_to_copy;
-		if (n >= math_bool_out_num) {
-			type = 0;
-			n = 0;
-
-			update = false;    //закончили один цикл отправки всего
-		}
-
-
-	    }
 
 		break;
 
@@ -5164,7 +5132,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 
 
 	switch (part) {
-	case 0: 
+	case 0:
 		f += 0.11f;
 		*(float*)ptr = f;
 		*num = 2;
@@ -5177,7 +5145,7 @@ void delta_HMI_set_regs(uint16_t* ptr, uint16_t* start_reg, uint16_t* num) {
 		*start_reg = 210;
 		break;
 	case 2:
-		b = ((b << 1) | ((b & 0x8000)?0x01:0x00));
+		b = ((b << 1) | ((b & 0x8000) ? 0x01 : 0x00));
 		*ptr = b;
 		*num = 1;
 		*start_reg = 110;
@@ -5221,15 +5189,15 @@ void speed_test() {
 		start = true;
 
 		for (int i = 0; i < NUM_F; i++)
-			test2_f[i] = (float*)&MATH_IO_REAL_OUT[rand()%math_real_out_num];
+			test2_f[i] = (float*)&MATH_IO_REAL_OUT[rand() % math_real_out_num];
 
 		for (int i = 0; i < NUM_I; i++)
-			test2_i[i] = (int32_t*)&MATH_IO_INT_OUT[rand()%math_int_out_num];
+			test2_i[i] = (int32_t*)&MATH_IO_INT_OUT[rand() % math_int_out_num];
 
 		for (int i = 0; i < NUM_B; i++)
-			test2_b[i] = (uint8_t*)&MATH_IO_BOOL_OUT[rand()% math_bool_out_num];
+			test2_b[i] = (uint8_t*)&MATH_IO_BOOL_OUT[rand() % math_bool_out_num];
 
-		
+
 		test_f_end = (float*)&test_f[NUM_F];
 		test_i_end = (int32_t*)&test_i[NUM_I];
 		test_b_end = (uint8_t*)&test_b[NUM_B];
@@ -5265,17 +5233,17 @@ void speed_test() {
 
 	/*
 	for (int i = 0; i < NUM_F; i++)
-		test_f[i] = *(test2_f[i]);
+	test_f[i] = *(test2_f[i]);
 
 	for (int i = 0; i < NUM_I; i++)
-		test_i[i] = *(test2_i[i]);
+	test_i[i] = *(test2_i[i]);
 
 	for (int i = 0; i < NUM_B; i++)
-		test_b[i] = *(test2_b[i]);
-		*/
+	test_b[i] = *(test2_b[i]);
+	*/
 
 #endif
-	
+
 	t2 = get_cpu_clks();
 
 	test_time = t2 - t1;
@@ -5308,7 +5276,7 @@ unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out)
 
 	DEBUG_ADD_POINT(22);
 
-	//dic_read();
+	dic_read();
 
 	set_inputs();
 
@@ -5326,17 +5294,17 @@ unsigned SurzaFrameCallback(const void* data_in, unsigned bytes, void* data_out)
 
 	// ====== вызов МЯДа  ==================
 	DEBUG_ADD_POINT(24);
-    MYD_step();
+	MYD_step();
 	DEBUG_ADD_POINT(25);
 	// =====================================
 
 	unsigned send_bytes = ethernet_output(data_out);
 
 	DEBUG_ADD_POINT(26);
-	//dic_write();
+	dic_write();
 
 	DEBUG_ADD_POINT(27);
-	//fiu_write();
+	fiu_write();
 
 	DEBUG_ADD_POINT(28);
 	indi_copy();
