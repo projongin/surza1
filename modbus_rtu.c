@@ -7,7 +7,7 @@
 #include <Rtk32.h> 
 
 #include "common.h"
-
+#include "global_defines.h"
 
 
 #define MODBUS_PRIORITY (RTKConfig.MainPriority+10)

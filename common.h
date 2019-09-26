@@ -65,11 +65,3 @@ void global_spinlock_lock();
 void global_spinlock_unlock();
 //-------------------------------
 
-
-
-#ifdef CPU_EXCEPTION_DEBUG
-#include "cpu_exception.h"
-#define DEBUG_ADD_POINT(x)  debug_add_point((x));
-#else
-#define DEBUG_ADD_POINT(x)
-#endif

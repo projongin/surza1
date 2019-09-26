@@ -6,9 +6,12 @@
 #include <Windows.h>
 #include <stdint.h>
 
+#include "global_defines.h"
 #include "common.h"
 #include "log.h"
 
+
+static bool surza_time_en = false;
 
 static unsigned isa_pps_adr;
 static unsigned period_us;
@@ -135,12 +138,17 @@ void time_init() {
 	cmos_update = false;
 
 	sync_time_update = false;
+
+	surza_time_en = true;
 }
 
 
 
 //обновление внутренней временной метки
 void time_isr_update() {
+
+	if (!surza_time_en)
+		return;
 
 	//обновление отдельного steady clock для счетчиков
 	steady_clock_update(period_us);
@@ -232,6 +240,11 @@ static uint64_t nsecs_since_sync = 0;
 //получение новых сообщений с метками времени
 void time_net_callback(const void* data, int length) {
 
+	if (!surza_time_en)
+		return;
+
+	DEBUG_ADD_POINT(370);
+
 	if (length < sizeof(surza_time_t))
 		return;
 
@@ -242,8 +255,12 @@ void time_net_callback(const void* data, int length) {
 	//сохранение текущего интервала между сообщениями
 	if (!sync_once) {
 		last_time_sync = local_time.steady_nsecs;
+		DEBUG_ADD_POINT(371);
 	}
 	else {
+
+		DEBUG_ADD_POINT(372);
+
 		msg_time = local_time.steady_nsecs - last_time_sync;
 		last_time_sync = local_time.steady_nsecs;
 
@@ -261,12 +278,17 @@ void time_net_callback(const void* data, int length) {
 
 	}
 
+
 	//проверка, что сообщение пришло без особых задержек (оно не сильно отличается от среднего интервала между сообщениями)
 	if (sync_once) {
+
+		DEBUG_ADD_POINT(373);
 
 		if (msg_time_stat_num != SYNC_STAT_HYSTORY)  //не обновлять пока не накопится история длительностей между приходом синхронизирующих сообщений
 			return;
 		else {
+
+			DEBUG_ADD_POINT(374);
 
 			uint64_t average_time = msg_time_sum / SYNC_STAT_HYSTORY;
 
@@ -276,7 +298,7 @@ void time_net_callback(const void* data, int length) {
 		}
 	}
 	
-	
+	DEBUG_ADD_POINT(375);
 
 	//подсчет необходимости синхронизации времени сурзы
 	surza_time_t* sync_time = (surza_time_t*)data;
@@ -285,6 +307,8 @@ void time_net_callback(const void* data, int length) {
 
 	if (local_time.secs != sync_time->secs) {
 		uint64_t nsecs;
+
+		DEBUG_ADD_POINT(376);
 
 		//секунды отличаются
 		if (local_time.secs > sync_time->secs) {
@@ -301,6 +325,9 @@ void time_net_callback(const void* data, int length) {
 			sync_flag = true;
 
 	} else {
+
+		DEBUG_ADD_POINT(377);
+
 		uint32_t deviation = (local_time.nsecs > sync_time->nsecs) ? local_time.nsecs - sync_time->nsecs : sync_time->nsecs - local_time.nsecs;
 
 		//если разбежка вышла за допустимый диапазон или с последней синхронизации прошло достаточно времени для выполнения принудительной синхронизации
@@ -309,8 +336,12 @@ void time_net_callback(const void* data, int length) {
 			sync_flag = true;
 	}
 
-	
+	DEBUG_ADD_POINT(378);
+
 	if (sync_flag) {
+
+		DEBUG_ADD_POINT(379);
+
 		unsigned ns = (sync_time->nsecs / period_ns + 1) * period_ns;
 		global_spinlock_lock();
  		 sync_secs = sync_time->secs;
@@ -320,6 +351,7 @@ void time_net_callback(const void* data, int length) {
 		nsecs_since_sync = local_time.steady_nsecs;
 	}
 
+	DEBUG_ADD_POINT(380);
 
 	//обновление cmos времени раз в час
 	static int64_t last_cmos_sync = 0;
@@ -328,11 +360,14 @@ void time_net_callback(const void* data, int length) {
 
 		last_cmos_sync = sync_time->secs;
 		cmos_update = true;
+
+		DEBUG_ADD_POINT(381);
 	}
 
 
 	sync_once = true;
 
+	DEBUG_ADD_POINT(382);
 }
 
 

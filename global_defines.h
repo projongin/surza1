@@ -24,12 +24,21 @@
 #endif
 
 
+#ifdef CPU_EXCEPTION_DEBUG
+#include "cpu_exception.h"
+#define DEBUG_ADD_POINT(x)  debug_add_point((x));
+#else
+#define DEBUG_ADD_POINT(x)
+#endif
+
+
+
 
 // глобальное разрешение распечатывать отладочную информацию в модулях
 #define  _ALLOW_DEBUG_PRINT
 
 // включение отправку индикаторов на дельту
-#define DELTA_HMI_ENABLE
+#define _DELTA_HMI_ENABLE
 
 
 //плата CPC150

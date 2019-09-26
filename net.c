@@ -11,7 +11,7 @@
 #include <socket.h>
 #include <Clock.h>
 
-
+#include "global_defines.h"
 #include "net.h"
 #include "buf_pool.h"
 
@@ -691,7 +691,6 @@ void net_main_queue_test() {
 static net_realtime_callback realtime_callback = NULL;
 
 
-
 static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buffer_size) {
 	DEBUG_ADD_POINT(140);
 
@@ -700,7 +699,9 @@ static int net_packed_in_isr_func(int iface_no, byte * data, int length, int buf
 	  {
 		  DEBUG_ADD_POINT(141);
 		  int offset = 14;
+
 		  realtime_callback(data + offset, length - offset);  //за счет паддинга на мелких фреймах ethernet передаваемая длина может быть больше реального количества полезных байт
+
 		  return 0;
 	  }
 
@@ -874,6 +875,9 @@ net_err_t net_init(net_msg_dispatcher dispatcher, net_realtime_callback real_cal
 		LOG_AND_SCREEN("MAC: %02x-%02x-%02x-%02x-%02x-%02x",
 			ii.my_ethernet_address[0], ii.my_ethernet_address[1], ii.my_ethernet_address[2],
 			ii.my_ethernet_address[3], ii.my_ethernet_address[4], ii.my_ethernet_address[5]);
+
+		//увеличиваю стек на всякий случай, так как использую свой колбек из прерывания
+		RTKSetIRQStack(ii.irq, 65536);
 	}
 
 	// Set the IP address and interface

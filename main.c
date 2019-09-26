@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-
+#include "global_defines.h"
 #include "buf_pool.h"
 #include "net.h"
 #include "log.h"

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "global_defines.h"
 
 #include "delta_hmi.h"
 #include "modbus_rtu.h"
