@@ -6,6 +6,7 @@
 #include <rtcom.h>
 #include <Rtk32.h> 
 
+#include "global_defines.h"
 #include "common.h"
 
 

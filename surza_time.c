@@ -6,9 +6,12 @@
 #include <Windows.h>
 #include <stdint.h>
 
+#include "global_defines.h"
 #include "common.h"
 #include "log.h"
 
+
+static bool surza_time_en = false;
 
 static unsigned isa_pps_adr;
 static unsigned period_us;
@@ -135,12 +138,17 @@ void time_init() {
 	cmos_update = false;
 
 	sync_time_update = false;
+
+	surza_time_en = true;
 }
 
 
 
 //обновление внутренней временной метки
 void time_isr_update() {
+
+	if (!surza_time_en)
+		return;
 
 	//обновление отдельного steady clock для счетчиков
 	steady_clock_update(period_us);
@@ -231,6 +239,9 @@ static uint64_t nsecs_since_sync = 0;
 
 //получение новых сообщений с метками времени
 void time_net_callback(const void* data, int length) {
+
+	if (!surza_time_en)
+		return;
 
 	if (length < sizeof(surza_time_t))
 		return;

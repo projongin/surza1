@@ -1,6 +1,7 @@
 
 #include <string.h>
 
+#include "global_defines.h"
 #include "common.h"
 
 #include "delta_hmi.h"

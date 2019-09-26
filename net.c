@@ -12,6 +12,7 @@
 #include <Clock.h>
 
 
+#include "global_defines.h"
 #include "net.h"
 #include "buf_pool.h"
 
