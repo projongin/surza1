@@ -1119,7 +1119,7 @@ static bool init_dic() {
 
 
 	
-	// настройка платы DIC  в соответствии с прочитанной конифгурацией
+	// настройка платы DIC  в соответствии с прочитанной конфигурацией
 
 	//все выходы заранее в отключенное состояние
 	for(int i=0; i<12; i++)
@@ -1251,6 +1251,33 @@ static bool init_fiu() {
 		return true;   // ФИУ не используется
 
 
+	//считывание адресов плат ФИУ
+
+	node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
+	if (!node)
+		return false;
+
+	bool fiu_en[2] = { true, true };
+
+	item = ParamTree_Find(node, "FIU1", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		fiu_en[0] = false;
+
+	if(fiu_en[0])
+		if (sscanf_s(item->value, "%u", &fiu1_adr) <= 0)
+			return false;
+
+	item = ParamTree_Find(node, "FIU2", PARAM_TREE_SEARCH_ITEM);
+	if (!item || !item->value)
+		fiu_en[1] = false;
+
+	if(fiu_en[1])
+		if (sscanf_s(item->value, "%u", &fiu2_adr) <= 0)
+			return false;
+
+	if (!fiu_en[0] && !fiu_en[1])  //фиу не используются
+		return true;
+
 
 	int num;
 	bool err = false;
@@ -1268,7 +1295,7 @@ static bool init_fiu() {
 		if (!item || !item->value)
 			err = true;
 		else
-			if (sscanf_s(item->value, "%u", &board) <= 0 || board >= 2)
+			if (sscanf_s(item->value, "%u", &board) <= 0 || board >= 2 || !fiu_en[board])
 				err = true;
 	
 
@@ -1316,29 +1343,6 @@ static bool init_fiu() {
 	
 	if (!fiu_table_size)
 		return true;  //нет настроенных каналов
-
-
-	//считывание адресов плат ФИУ
-
-	node = ParamTree_Find(ParamTree_MainNode(), "SYSTEM", PARAM_TREE_SEARCH_NODE);
-	if (!node)
-		return false;
-
-	item = ParamTree_Find(node, "FIU1", PARAM_TREE_SEARCH_ITEM);
-	if (!item || !item->value)
-		return false;
-
-	if (sscanf_s(item->value, "%u", &fiu1_adr) <= 0)
-		return false;
-
-	item = ParamTree_Find(node, "FIU2", PARAM_TREE_SEARCH_ITEM);
-	if (!item || !item->value)
-		return false;
-
-	if (sscanf_s(item->value, "%u", &fiu2_adr) <= 0)
-		return false;
-
-
 
 
 	//проверка наличия фиу1 и фиу2
