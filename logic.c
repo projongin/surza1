@@ -2752,7 +2752,7 @@ static unsigned osc_record_offset_bool;
 //размер записи одного отсчета осциллографа
 static unsigned osc_record_size;
 
-//размер записи одного отсчета осциллографа за исключением вырванивания и накладных расходов (только данные)
+//размер записи одного отсчета осциллографа за исключением выравнивания и накладных расходов (только данные)
 static unsigned osc_record_size_raw;
 
 //общее количество доступных буферов для осциллографа
@@ -2762,6 +2762,8 @@ static unsigned osc_bufs_total;
 static int osc_buf_pool_num;
 
 //ТОЛЬКО для дальнейшего использования отладочным осциллографом
+//количество каналов
+static unsigned osc_ch_num;
 //таблица поиска соответствия номера канала осциллографа данным этого канала в отсчете
 static unsigned* osc_ch_data_offset;
 //таблица поиска соответствия номера канала осциллографа типу этого канала
@@ -2942,13 +2944,17 @@ static bool init_oscilloscope() {
 	}
 
 	//выделение памяти для таблицы поиска соотвествия номера канала осциллографа данным этого канала в отсчете (используется отладочным осциллографом)
-	osc_ch_data_offset = (unsigned*)malloc(sizeof(unsigned)*(osc_num_real + osc_num_int + osc_num_bool));
+
+	osc_ch_num = osc_num_real + osc_num_int + osc_num_bool;
+
+	osc_ch_data_offset = (unsigned*)malloc(sizeof(unsigned)*osc_ch_num);
 	if (!osc_ch_data_offset)
 		err = true;
 
-	osc_ch_data_type = (uint8_t*)malloc(osc_num_real + osc_num_int + osc_num_bool);
+	osc_ch_data_type = (uint8_t*)malloc(osc_ch_num);
 	if (!osc_ch_data_type)
 		err = true;
+
 
 	if (err) {
 		osc_free_memory();
@@ -3808,26 +3814,16 @@ static bool debug_osc_connection_en;
 
 //необходимость установить новый тригер
 static bool debug_osc_set_new_trigger;
+//данные нового тригера
+static debug_osc_trigger_t debug_osc_new_trigger_data;
 
 
 //данные для обработки тригера
 static struct trigger_t {
-	//состояние тригера задан/не задан
-	bool enable;
 	//тип тригера
-	enum {
-		TRIGGER_UNCONDITIONAL = 0,
-		TRIGGER_RISE,
-		TRIGGER_FALL,
-		TRIGGER_BOTH,
-		TRIGGER_EQUAL
-	} type;
+	unsigned type;
 	//тип данных канала тригера
-	enum {
-		CH_FLOAT = 0,
-		CH_INT,
-		CH_BOOL
-	} ch_type;
+	unsigned ch_type;
 	//смещение до данных канала в записываемом отсчете
 	unsigned ch_offset;
 	//порядковый номер отсчета со сработавшим тригером
@@ -3841,13 +3837,17 @@ static struct trigger_t {
 		float f32;
 		int32_t i32;
 	} previous_value;
-	//предыдущее значение
+	//уставка
 	union {
 		float f32;
 		int32_t i32;
 	} setpoint;
-
+	//непрерывный режим
+	bool continuous_mode;
 } debug_osc_trigger_data;
+
+//колбек для обработки сообщений для отладочного осциллогорафа
+void debug_osc_net_callback(net_msg_t* msg, uint64_t channel);
 
 
 static bool init_debug_osc() {
@@ -3886,29 +3886,24 @@ static bool init_debug_osc() {
 
 	debug_osc_set_new_trigger = false;
 
-	debug_osc_trigger_data.enable = false;
-	
+	//обработчик сетевых сообщений отладочного осциллографа
+	net_add_dispatcher((uint8_t)NET_MSG_DEBUG_OSCILLOSCOPE, debug_osc_net_callback);
+
 
 	debug_osc_init_ok = true;
 
 	return true;
-
 }
 
 
 
-
-void debug_osc_reset_trigger_data() {
-	debug_osc_trigger_data.enable = false;
-	debug_osc_trigger_data.previous_en = false;
-}
 
 void debug_osc_save_previous() {
 	char* adr = (char*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset;
 	switch (debug_osc_trigger_data.ch_type) {
-	case CH_FLOAT: debug_osc_trigger_data.previous_value.f32 = *(float*)(adr); break;
-	case CH_INT:   debug_osc_trigger_data.previous_value.i32 = *(int32_t*)(adr); break;
-	case CH_BOOL:  debug_osc_trigger_data.previous_value.i32 = (*(uint8_t*)(adr))?1:0; break;
+	case DEBUG_OSC_SETPOINT_TYPE_FLOAT: debug_osc_trigger_data.previous_value.f32 = *(float*)(adr); break;
+	case DEBUG_OSC_SETPOINT_TYPE_INT32:   debug_osc_trigger_data.previous_value.i32 = *(int32_t*)(adr); break;
+	case DEBUG_OSC_SETPOINT_TYPE_BOOL:  debug_osc_trigger_data.previous_value.i32 = (*(uint8_t*)(adr))?1:0; break;
 	}
 }
 
@@ -3932,17 +3927,17 @@ void debug_osc_add_data() {
 
 bool debug_osc_check_trigger_rise() {
 	switch (debug_osc_trigger_data.ch_type) {
-	case CH_FLOAT: {
+	case DEBUG_OSC_SETPOINT_TYPE_FLOAT: {
 		float f = *(float*)((char*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		float setpoint = debug_osc_trigger_data.setpoint.f32;
 		if (debug_osc_trigger_data.previous_value.f32 < setpoint && f >= setpoint) return true;
 		break; }
-	case CH_INT: {
+	case DEBUG_OSC_SETPOINT_TYPE_INT32: {
 		int32_t i = *(int32_t*)((char*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		int32_t setpoint = debug_osc_trigger_data.setpoint.i32;
 		if (debug_osc_trigger_data.previous_value.i32 < setpoint && i >= setpoint) return true;
 		break; }
-	case CH_BOOL: {
+	case DEBUG_OSC_SETPOINT_TYPE_BOOL: {
 		int32_t i = (int32_t) *((uint8_t*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		if (debug_osc_trigger_data.previous_value.i32 != i && i == debug_osc_trigger_data.setpoint.i32) return true;
 		break; }
@@ -3952,17 +3947,17 @@ bool debug_osc_check_trigger_rise() {
 
 bool debug_osc_check_trigger_fall() {
 	switch (debug_osc_trigger_data.ch_type) {
-	case CH_FLOAT: {
+	case DEBUG_OSC_SETPOINT_TYPE_FLOAT: {
 		float f = *(float*)((char*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		float setpoint = debug_osc_trigger_data.setpoint.f32;
 		if (debug_osc_trigger_data.previous_value.f32 > setpoint && f <= setpoint) return true;
 		break; }
-	case CH_INT: {
+	case DEBUG_OSC_SETPOINT_TYPE_INT32: {
 		int32_t i = *(int32_t*)((char*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		int32_t setpoint = debug_osc_trigger_data.setpoint.i32;
 		if (debug_osc_trigger_data.previous_value.i32 > setpoint && i <= setpoint) return true;
 		break; }
-	case CH_BOOL: {
+	case DEBUG_OSC_SETPOINT_TYPE_BOOL: {
 		int32_t i = (int32_t) *((uint8_t*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		if (debug_osc_trigger_data.previous_value.i32 != i && i == debug_osc_trigger_data.setpoint.i32) return true;
 		break; }
@@ -3973,17 +3968,17 @@ bool debug_osc_check_trigger_fall() {
 
 bool debug_osc_check_trigger_equal() {
 	switch (debug_osc_trigger_data.ch_type) {
-	case CH_FLOAT: {
+	case DEBUG_OSC_SETPOINT_TYPE_FLOAT: {
 		float f = *(float*)((char*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		float setpoint = debug_osc_trigger_data.setpoint.f32;
 		if (f == setpoint) return true;
 		break; }
-	case CH_INT: {
+	case DEBUG_OSC_SETPOINT_TYPE_INT32: {
 		int32_t i = *(int32_t*)((char*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		int32_t setpoint = debug_osc_trigger_data.setpoint.i32;
 		if (i == setpoint) return true;
 		break; }
-	case CH_BOOL: {
+	case DEBUG_OSC_SETPOINT_TYPE_BOOL: {
 		int32_t i = (int32_t) *((uint8_t*)debug_osc_main_buf + debug_osc_buf_last_added_ptr * osc_record_size + debug_osc_trigger_data.ch_offset);
 		if (i == debug_osc_trigger_data.setpoint.i32) return true;
 		break; }
@@ -3995,18 +3990,16 @@ bool debug_osc_check_trigger_equal() {
 //проверка условий срабатывания тригера
 bool debug_osc_check_trigger() {
 
-	if (debug_osc_trigger_data.enable)
-		return false;
-
 	switch (debug_osc_trigger_data.type){
-	case TRIGGER_UNCONDITIONAL: return true;
-	case TRIGGER_RISE: if (!debug_osc_trigger_data.previous_en) return false;
-		               return debug_osc_check_trigger_rise();
-	case TRIGGER_FALL: if (!debug_osc_trigger_data.previous_en) return false;
-		               return debug_osc_check_trigger_fall();
-	case TRIGGER_BOTH: if (!debug_osc_trigger_data.previous_en) return false;
-		               return (debug_osc_check_trigger_rise() || debug_osc_check_trigger_fall());
-	case TRIGGER_EQUAL: return debug_osc_check_trigger_equal();
+	case DEBUG_OSC_TRIGGER_TYPE_RESET: return false;
+	case DEBUG_OSC_TRIGGER_TYPE_UNCONDITIONAL: return true;
+	case DEBUG_OSC_TRIGGER_TYPE_RISE: if (!debug_osc_trigger_data.previous_en) return false;
+		                              return debug_osc_check_trigger_rise();
+	case DEBUG_OSC_TRIGGER_TYPE_FALL: if (!debug_osc_trigger_data.previous_en) return false;
+		                              return debug_osc_check_trigger_fall();
+	case DEBUG_OSC_TRIGGER_TYPE_BOTH: if (!debug_osc_trigger_data.previous_en) return false;
+		                              return (debug_osc_check_trigger_rise() || debug_osc_check_trigger_fall());
+	case DEBUG_OSC_TRIGGER_TYPE_EQUAL: return debug_osc_check_trigger_equal();
 	}
 
 	return false;
@@ -4014,10 +4007,6 @@ bool debug_osc_check_trigger() {
 
 //проверка дописалась ли осциллограмма
 bool debug_osc_accomplished() {
-
-	if (debug_osc_trigger_data.enable)
-		return false;
-
 	return (debug_osc_bufs_added >= debug_osc_trigger_data.length);
 }
 
@@ -4030,24 +4019,80 @@ bool debug_osc_dispatch_complete() {
 
 //установка нового тригера
 void debug_osc_setup_trigger() {
-	//заполнить trigger_data
+	
+	debug_osc_trigger_data.type = debug_osc_new_trigger_data.trigger_type;
+	if (debug_osc_trigger_data.type != DEBUG_OSC_TRIGGER_TYPE_RESET
+		&& debug_osc_trigger_data.type != DEBUG_OSC_TRIGGER_TYPE_UNCONDITIONAL
+		&& debug_osc_trigger_data.type != DEBUG_OSC_TRIGGER_TYPE_RISE
+		&& debug_osc_trigger_data.type != DEBUG_OSC_TRIGGER_TYPE_FALL
+		&& debug_osc_trigger_data.type != DEBUG_OSC_TRIGGER_TYPE_BOTH
+		&& debug_osc_trigger_data.type != DEBUG_OSC_TRIGGER_TYPE_EQUAL)
+		debug_osc_trigger_data.type = DEBUG_OSC_TRIGGER_TYPE_RESET;
 
-	//....
-	unsigned ch = 11;
+	if (debug_osc_trigger_data.type == DEBUG_OSC_TRIGGER_TYPE_RESET)
+		return;
 
-	debug_osc_trigger_data.ch_offset = osc_ch_data_offset[ch];
+	debug_osc_trigger_data.continuous_mode = debug_osc_new_trigger_data.continuous_mode;
+	
+	while (true) {
 
-	switch (osc_ch_data_type[ch]) {
-	case LOGIC_TYPE_REAL_OUT: debug_osc_trigger_data.ch_type = CH_FLOAT; break;
-    case LOGIC_TYPE_INT_OUT:  debug_osc_trigger_data.ch_type = CH_INT; break;
-	case LOGIC_TYPE_BOOL_OUT: debug_osc_trigger_data.ch_type = CH_BOOL; break;
-	default: debug_osc_trigger_data.ch_type = CH_BOOL; break;
-	};
+		unsigned ch = debug_osc_new_trigger_data.trigger_channel;
+		if (ch >= osc_ch_num)
+			break;
 
-	//.......
+		debug_osc_trigger_data.ch_offset = osc_ch_data_offset[ch];
 
+		bool err = false;
+		switch (osc_ch_data_type[ch]) {
+		case LOGIC_TYPE_REAL_OUT: debug_osc_trigger_data.ch_type = DEBUG_OSC_SETPOINT_TYPE_FLOAT; break;
+		case LOGIC_TYPE_INT_OUT:  debug_osc_trigger_data.ch_type = DEBUG_OSC_SETPOINT_TYPE_INT32; break;
+		case LOGIC_TYPE_BOOL_OUT: debug_osc_trigger_data.ch_type = DEBUG_OSC_SETPOINT_TYPE_BOOL; break;
+		default: err = true; break;
+		};
+		if (err)
+			break;
 
-	debug_osc_set_new_trigger = false;
+		debug_osc_trigger_data.previous_en = false;
+
+		//подсчет требуемой длины в отсчетах
+		unsigned num = (debug_osc_new_trigger_data.length_msec * 1000) / SurzaPeriod();
+		debug_osc_trigger_data.length = (num < debug_osc_bufs_total) ? num : debug_osc_bufs_total;
+
+		//порядковый номер отсчета со сработавшим тригером
+		if (debug_osc_new_trigger_data.trigger_point >= 100)
+			debug_osc_trigger_data.trigger_point_num = debug_osc_trigger_data.length - 1;
+		else
+			debug_osc_trigger_data.trigger_point_num = (debug_osc_trigger_data.length*debug_osc_new_trigger_data.trigger_point) / 100;
+
+				
+		//уставка
+		if (debug_osc_trigger_data.ch_type == DEBUG_OSC_SETPOINT_TYPE_FLOAT) {
+			if(!_finite(debug_osc_new_trigger_data.setpoint.f))
+				break;
+			debug_osc_trigger_data.setpoint.f32 = debug_osc_new_trigger_data.setpoint.f;
+		} else if (debug_osc_trigger_data.ch_type == DEBUG_OSC_SETPOINT_TYPE_INT32) {
+			debug_osc_trigger_data.setpoint.i32 = debug_osc_new_trigger_data.setpoint.i;
+		}else {
+			debug_osc_trigger_data.setpoint.i32 = debug_osc_new_trigger_data.setpoint.i?1:0;
+		}
+
+		return;
+	}
+
+	//в случае ошибки тригер отключен
+	debug_osc_trigger_data.type = DEBUG_OSC_TRIGGER_TYPE_RESET;
+	return;
+
+	
+}
+
+//очистка перед перезапуском осциллографа
+void debug_osc_relaunch(bool reset_trigger) {
+	debug_osc_trigger_data.previous_en = false;
+	debug_osc_buf_ptr = 0;
+	debug_osc_bufs_added = 0;
+	if(reset_trigger)
+		debug_osc_trigger_data.type = DEBUG_OSC_TRIGGER_TYPE_RESET;
 }
 
 
@@ -4059,22 +4104,23 @@ void debug_osc_add() {
 		return;
 
 	if (!debug_osc_connection_en)
-		debug_osc_state = DEBUG_OSC_STATE_ACCUMULATE_DATA;
+		debug_osc_state = DEBUG_OSC_STATE_WAIT_CONNECTION;
 
 
 	switch (debug_osc_state) {
 	case DEBUG_OSC_STATE_WAIT_CONNECTION:
-		debug_osc_buf_ptr = 0;
-		debug_osc_bufs_added = 0;
 		if (debug_osc_connection_en) {
-			debug_osc_reset_trigger_data();
+			debug_osc_relaunch(true);
 			debug_osc_state = DEBUG_OSC_STATE_ACCUMULATE_DATA;
-		}
+		} else
+			debug_osc_set_new_trigger = false;
 		break;
 	case DEBUG_OSC_STATE_ACCUMULATE_DATA:
 	    debug_osc_add_data();
-		if(debug_osc_set_new_trigger)
+		if (debug_osc_set_new_trigger) {
 			debug_osc_setup_trigger();
+			debug_osc_set_new_trigger = false;
+		}
 		if (debug_osc_check_trigger()) {
 			debug_osc_state = DEBUG_OSC_STATE_ACCOMPLISH;
 			break;
@@ -4095,7 +4141,11 @@ void debug_osc_add() {
 		break;
     case DEBUG_OSC_STATE_WAIT_DISPATCH:
 		if (debug_osc_dispatch_complete()) {
-			debug_osc_state = DEBUG_OSC_STATE_WAIT_CONNECTION;
+			if (debug_osc_trigger_data.continuous_mode) {
+				debug_osc_relaunch(false);
+				debug_osc_state = DEBUG_OSC_STATE_ACCUMULATE_DATA;
+			} else
+				debug_osc_state = DEBUG_OSC_STATE_WAIT_CONNECTION;
 		}
 		break;
 	default: break;
@@ -4103,6 +4153,76 @@ void debug_osc_add() {
 
 }
 
+
+uint32_t debug_osc_get_status() {
+	switch (atom_get_state(&debug_osc_state)) {
+	case DEBUG_OSC_STATE_WAIT_CONNECTION: return DEBUG_OSC_STATUS_READY;
+	case DEBUG_OSC_STATE_ACCUMULATE_DATA: return (atom_get_state(&debug_osc_trigger_data.type) == DEBUG_OSC_TRIGGER_TYPE_RESET ? DEBUG_OSC_STATUS_READY : DEBUG_OSC_STATUS_WAIT_TRIGGER);
+	case DEBUG_OSC_STATE_ACCOMPLISH: return DEBUG_OSC_STATUS_ACCOMPLISH;
+	case DEBUG_OSC_STATE_WAIT_DISPATCH: return DEBUG_OSC_STATUS_WAIT_DISPATCH;
+	default: return DEBUG_OSC_STATUS_READY;
+	}
+}
+
+void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
+
+	// проверка полученного сообщения
+	if (msg->size < sizeof(msg_type_debug_osc_t)
+		|| msg->type != (uint8_t)NET_MSG_DEBUG_OSCILLOSCOPE)
+		return;
+
+	if (!debug_osc_init_ok)
+		return;
+
+	msg_type_debug_osc_t* osc_msg = (msg_type_debug_osc_t*)&msg->data[0];
+	if (memcmp(osc_msg->md5_hash, settings_header->hash, 16))
+		return;
+
+	
+	switch (osc_msg->type) {
+	case DEBUG_OSC_STATUS:
+		break;
+	case DEBUG_OSC_REQUEST_STATUS:
+	{
+        //отпарвка в ответ сообщенияс текущим статусом
+		const unsigned msg_size = sizeof(msg_type_debug_osc_t) + sizeof(debug_osc_status_t);
+		if (net_msg_buf_get_available_space(msg) < msg_size) {
+			msg = net_get_msg_buf(msg_size);
+			if (!msg)
+				return;
+		} else	msg->size = msg_size;
+
+		msg->type = (uint8_t)NET_MSG_DEBUG_OSCILLOSCOPE;
+		msg->subtype = 0;
+
+		msg_type_debug_osc_t* osc_msg = (msg_type_debug_osc_t*)&msg->data[0];
+		osc_msg->type = DEBUG_OSC_STATUS;
+		osc_msg->size = sizeof(debug_osc_status_t);
+		memcpy(osc_msg->md5_hash, settings_header->hash, 16);
+
+		debug_osc_status_t* status_data = (debug_osc_status_t*)(osc_msg+1);
+		status_data->status = debug_osc_get_status();
+
+		net_send_msg(msg, NET_PRIORITY_LOW, channel);
+	}
+		break;
+	case DEBUG_OSC_HEADER:
+		break;
+	case DEBUG_OSC_REQUEST_HEADER:
+		break;
+	case DEBUG_OSC_DATA:
+		break;
+	case DEBUG_OSC_REQUEST_DATA:
+		break;
+	case DEBUG_OSC_SET_TRIGGER:
+		break;
+	case DEBUG_OSC_REQUEST_DELETE:
+		break;
+	default: return;
+	}
+
+
+}
 
 
 

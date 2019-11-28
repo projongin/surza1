@@ -31,6 +31,9 @@ enum GateMessageType{
 	NET_GATE_MSG_IEC60870_DATA,
 	NET_GATE_MSG_IEC60870_EVENTS,
 	NET_MSG_COMMAND,
+	NET_GATE_COMMAND,
+	NET_GATE_SETTINGS,
+	NET_MSG_DEBUG_OSCILLOSCOPE,
 
 	NET_MSG_VYBORG_INFO = 40
 };
@@ -196,6 +199,95 @@ typedef struct {
 	uint64_t id;
 	uint8_t  reserved[8];
 } oscilloscope_request_delete_t;
+
+//-------------------------------------------------------------------
+
+
+
+//-------------------------------------------------------------------
+//  debug  oscilloscope
+//-------------------------------------------------------------------
+#define DEBUG_OSC_STATUS           0
+#define DEBUG_OSC_REQUEST_STATUS   1  
+#define DEBUG_OSC_HEADER           2
+#define DEBUG_OSC_REQUEST_HEADER   3  
+#define DEBUG_OSC_DATA             4
+#define DEBUG_OSC_REQUEST_DATA     5
+#define DEBUG_OSC_SET_TRIGGER      6
+#define DEBUG_OSC_REQUEST_DELETE   7  
+
+
+typedef struct {
+	uint32_t type;
+	uint32_t size;
+	uint8_t  md5_hash[16];
+	//uint8_t msg[size];
+} msg_type_debug_osc_t;
+
+// debug osc msg types:
+
+typedef struct {
+	uint64_t id;                 //unique id
+	uint32_t parts;              //num of parts
+	uint32_t part_size;          //part size
+	uint32_t step_time_nsecs;    //step time in nsecs
+	uint32_t total_length;       //num of steps
+	uint32_t trigger_channel;    //trigger channel
+	uint32_t trigger_step;       //trigger step num
+	surza_time_t time;           //first step time
+	uint8_t  reserved[16];
+} debug_osc_header_t;
+
+typedef struct {
+	uint64_t id;
+	uint32_t part;
+	uint32_t part_size_bytes;
+	uint8_t  reserved[8];
+	//uintt8_t data[part_length_bytes];
+}  debug_osc_data_t;
+
+typedef struct {
+	uint64_t id;
+	uint32_t part;
+	uint8_t  reserved[8];
+} debug_osc_request_data_t;
+
+
+#define DEBUG_OSC_STATUS_READY           0
+#define DEBUG_OSC_STATUS_WAIT_TRIGGER    1
+#define DEBUG_OSC_STATUS_ACCOMPLISH      2
+#define DEBUG_OSC_STATUS_WAIT_DISPATCH   4
+
+typedef struct {
+	uint32_t status;
+	uint8_t reserved[16];
+} debug_osc_status_t;
+
+
+#define DEBUG_OSC_TRIGGER_TYPE_RESET          0
+#define DEBUG_OSC_TRIGGER_TYPE_UNCONDITIONAL  1
+#define DEBUG_OSC_TRIGGER_TYPE_RISE           2
+#define DEBUG_OSC_TRIGGER_TYPE_FALL           3
+#define DEBUG_OSC_TRIGGER_TYPE_BOTH           4
+#define DEBUG_OSC_TRIGGER_TYPE_EQUAL          5
+
+#define DEBUG_OSC_SETPOINT_TYPE_FLOAT         0
+#define DEBUG_OSC_SETPOINT_TYPE_INT32         1
+#define DEBUG_OSC_SETPOINT_TYPE_BOOL          2
+
+typedef struct {
+	uint32_t trigger_channel;
+	uint32_t trigger_type;
+	union {
+		float f;
+		int32_t i;
+	} setpoint;
+	uint32_t trigger_point;  //0-100%
+	uint32_t length_msec;    //osc length
+	uint32_t continuous_mode;
+	uint8_t reserved[16];
+} debug_osc_trigger_t;
+
 
 //-------------------------------------------------------------------
 
