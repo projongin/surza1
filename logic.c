@@ -4180,11 +4180,9 @@ void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
 
 	
 	switch (osc_msg->type) {
-	case DEBUG_OSC_STATUS:
-		break;
 	case DEBUG_OSC_REQUEST_STATUS:
 	{
-        //отпарвка в ответ сообщени€с текущим статусом
+        //отправка в ответ сообщени€ с текущим статусом
 		const unsigned msg_size = sizeof(msg_type_debug_osc_t) + sizeof(debug_osc_status_t);
 		if (net_msg_buf_get_available_space(msg) < msg_size) {
 			msg = net_get_msg_buf(msg_size);
@@ -4206,18 +4204,34 @@ void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
 		net_send_msg(msg, NET_PRIORITY_LOW, channel);
 	}
 		break;
-	case DEBUG_OSC_HEADER:
-		break;
+
 	case DEBUG_OSC_REQUEST_HEADER:
+
+
+		if (debug_osc_get_status() != DEBUG_OSC_STATUS_WAIT_DISPATCH)
+			break;
+
+
 		break;
-	case DEBUG_OSC_DATA:
-		break;
+
 	case DEBUG_OSC_REQUEST_DATA:
 		break;
+
 	case DEBUG_OSC_SET_TRIGGER:
+
+		if (osc_msg->size < sizeof(debug_osc_trigger_t))
+			return;
+
+		global_spinlock_lock();
+		  memcpy(&debug_osc_new_trigger_data, osc_msg + 1, sizeof(debug_osc_trigger_t));
+		  debug_osc_set_new_trigger = true;
+		global_spinlock_unlock();
+
 		break;
+
 	case DEBUG_OSC_REQUEST_DELETE:
 		break;
+
 	default: return;
 	}
 
