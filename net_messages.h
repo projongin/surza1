@@ -230,11 +230,10 @@ typedef struct {
 	uint64_t id;                 //unique id
 	uint32_t parts;              //num of parts
 	uint32_t part_size;          //part size
-	uint32_t step_time_nsecs;    //step time in nsecs
-	uint32_t total_length;       //num of steps
+	uint32_t step_time_usecs;    //step time, usecs
 	uint32_t trigger_channel;    //trigger channel
 	uint32_t trigger_step;       //trigger step num
-	surza_time_t time;           //first step time
+	surza_time_t trigger_time;   //trigger time
 	uint8_t  reserved[16];
 } debug_osc_header_t;
 
