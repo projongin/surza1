@@ -3811,6 +3811,10 @@ static void* debug_osc_main_buf;
 
 //наличие подключенного и активного отладочного осциллографа в спецарме
 static bool debug_osc_connection_en;
+//таймер для контроля соединения
+static uint32_t debug_osc_connection_timer;
+//значение таймаута
+#define DEBUG_OSC_CONNECTION_TIMEOUT_USEC  3000000
 
 //необходимость установить новый тригер
 static bool debug_osc_set_new_trigger;
@@ -3819,6 +3823,7 @@ static debug_osc_trigger_t debug_osc_new_trigger_data;
 
 //уникальный id
 static uint64_t debug_osc_id;
+
 
 
 
@@ -4002,6 +4007,9 @@ bool debug_osc_check_trigger_equal() {
 //проверка условий срабатывания тригера
 bool debug_osc_check_trigger() {
 
+	if (debug_osc_bufs_added < debug_osc_trigger_data.trigger_point_num)
+		return false;
+
 	switch (debug_osc_trigger_data.type){
 	case DEBUG_OSC_TRIGGER_TYPE_RESET: return false;
 	case DEBUG_OSC_TRIGGER_TYPE_UNCONDITIONAL: return true;
@@ -4117,6 +4125,12 @@ void debug_osc_add() {
 	if (!debug_osc_init_ok)
 		return;
 
+	if (debug_osc_connection_en) {
+		debug_osc_connection_timer = debug_osc_connection_timer > SurzaPeriod() ? debug_osc_connection_timer - SurzaPeriod() : 0;
+		if (!debug_osc_connection_timer)
+			debug_osc_connection_en = false;
+	}
+
 	if (!debug_osc_connection_en)
 		debug_osc_state = DEBUG_OSC_STATE_WAIT_CONNECTION;
 
@@ -4202,6 +4216,11 @@ void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
 	switch (osc_msg->type) {
 	case DEBUG_OSC_REQUEST_STATUS:
 	{
+		global_spinlock_lock();
+		  debug_osc_connection_en = true;
+		  debug_osc_connection_timer = DEBUG_OSC_CONNECTION_TIMEOUT_USEC;
+		global_spinlock_lock();
+
         //отправка в ответ сообщения с текущим статусом
 		const unsigned msg_size = sizeof(msg_type_debug_osc_t) + sizeof(debug_osc_status_t);
 		if (net_msg_buf_get_available_space(msg) < msg_size) {
@@ -4268,6 +4287,11 @@ void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
 
 		if (debug_osc_get_status() != DEBUG_OSC_STATUS_WAIT_DISPATCH)
 			break;
+
+		global_spinlock_lock();
+		  debug_osc_connection_en = true;
+		  debug_osc_connection_timer = DEBUG_OSC_CONNECTION_TIMEOUT_USEC;
+		global_spinlock_lock();
 
 		{
 			//проверка запроса 
@@ -5500,6 +5524,8 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	DEBUG_ADD_POINT(36);
 	oscilloscope_add();
+
+	debug_osc_add();
 
 	DEBUG_ADD_POINT(37);
 
