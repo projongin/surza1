@@ -3860,7 +3860,7 @@ static struct trigger_t {
 	bool dispatched;
 } debug_osc_trigger_data;
 
-//колбек для обработки сообщений для отладочного осциллогорафа
+//колбек для обработки сообщений для отладочного осциллографа
 void debug_osc_net_callback(net_msg_t* msg, uint64_t channel);
 
 
@@ -4035,6 +4035,20 @@ bool debug_osc_dispatch_complete() {
 	return debug_osc_trigger_data.dispatched;
 }
 
+//получение указателя на часть осциллограммы с номером part
+uint8_t* debug_osc_get_osc_data(unsigned part) {
+
+	//определение сколько тактов назад был отсчет с номером part
+	unsigned sub = debug_osc_bufs_added - part;
+	//поиск соответствующего буфера
+	unsigned buf_ptr = (debug_osc_buf_ptr >= sub) ? debug_osc_buf_ptr >= sub : (debug_osc_bufs_total-sub)+debug_osc_buf_ptr;
+
+	uint8_t* ptr = (uint8_t*)debug_osc_main_buf + buf_ptr * osc_record_size;
+	ptr += osc_record_offset_real;
+	
+	return ptr;
+}
+
 //установка нового тригера
 void debug_osc_setup_trigger() {
 	
@@ -4089,14 +4103,20 @@ void debug_osc_setup_trigger() {
 
 				
 		//уставка
-		if (debug_osc_trigger_data.ch_type == DEBUG_OSC_SETPOINT_TYPE_FLOAT) {
-			if(!_finite(debug_osc_new_trigger_data.setpoint.f))
-				break;
-			debug_osc_trigger_data.setpoint.f32 = debug_osc_new_trigger_data.setpoint.f;
-		} else if (debug_osc_trigger_data.ch_type == DEBUG_OSC_SETPOINT_TYPE_INT32) {
-			debug_osc_trigger_data.setpoint.i32 = debug_osc_new_trigger_data.setpoint.i;
-		}else {
-			debug_osc_trigger_data.setpoint.i32 = debug_osc_new_trigger_data.setpoint.i?1:0;
+		if (debug_osc_trigger_data.type != DEBUG_OSC_TRIGGER_TYPE_UNCONDITIONAL) {
+			if (debug_osc_trigger_data.ch_type == DEBUG_OSC_SETPOINT_TYPE_FLOAT) {
+				if (!_finite(debug_osc_new_trigger_data.setpoint.f))
+					break;
+				debug_osc_trigger_data.setpoint.f32 = debug_osc_new_trigger_data.setpoint.f;
+			}
+			else if (debug_osc_trigger_data.ch_type == DEBUG_OSC_SETPOINT_TYPE_INT32) {
+				debug_osc_trigger_data.setpoint.i32 = debug_osc_new_trigger_data.setpoint.i;
+			}
+			else {
+				debug_osc_trigger_data.setpoint.i32 = debug_osc_new_trigger_data.setpoint.i ? 1 : 0;
+			}
+		} else {
+			debug_osc_trigger_data.setpoint.i32 = 0;
 		}
 
 		return;
@@ -4133,6 +4153,7 @@ void debug_osc_add() {
 
 	if (!debug_osc_connection_en)
 		debug_osc_state = DEBUG_OSC_STATE_WAIT_CONNECTION;
+
 
 
 	switch (debug_osc_state) {
@@ -4185,6 +4206,21 @@ void debug_osc_add() {
 	default: break;
 	}
 
+
+	//--------------------------
+	static unsigned prev_state = DEBUG_OSC_STATE_WAIT_CONNECTION;
+	if (prev_state != debug_osc_state) {
+		switch (debug_osc_state) {
+		case DEBUG_OSC_STATE_WAIT_CONNECTION: { LOG_AND_SCREEN("DEBUG_OSC_STATE_WAIT_CONNECTION"); } break;
+		case DEBUG_OSC_STATE_ACCUMULATE_DATA: { LOG_AND_SCREEN("DEBUG_OSC_STATE_ACCUMULATE_DATA"); } break;
+		case DEBUG_OSC_STATE_ACCOMPLISH: { LOG_AND_SCREEN("DEBUG_OSC_STATE_ACCOMPLISH"); } break;
+		case DEBUG_OSC_STATE_WAIT_DISPATCH: { LOG_AND_SCREEN("DEBUG_OSC_STATE_WAIT_DISPATCH"); } break;
+		}
+	}
+	prev_state = debug_osc_state;
+    //------------------------
+
+
 }
 
 
@@ -4212,15 +4248,16 @@ void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
 	if (memcmp(osc_msg->md5_hash, settings_header->hash, 16))
 		return;
 
+
+	global_spinlock_lock();
+	  debug_osc_connection_en = true;
+	  debug_osc_connection_timer = DEBUG_OSC_CONNECTION_TIMEOUT_USEC;
+	global_spinlock_unlock();
 	
+
 	switch (osc_msg->type) {
 	case DEBUG_OSC_REQUEST_STATUS:
 	{
-		global_spinlock_lock();
-		  debug_osc_connection_en = true;
-		  debug_osc_connection_timer = DEBUG_OSC_CONNECTION_TIMEOUT_USEC;
-		global_spinlock_lock();
-
         //отправка в ответ сообщения с текущим статусом
 		const unsigned msg_size = sizeof(msg_type_debug_osc_t) + sizeof(debug_osc_status_t);
 		if (net_msg_buf_get_available_space(msg) < msg_size) {
@@ -4288,11 +4325,6 @@ void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
 		if (debug_osc_get_status() != DEBUG_OSC_STATUS_WAIT_DISPATCH)
 			break;
 
-		global_spinlock_lock();
-		  debug_osc_connection_en = true;
-		  debug_osc_connection_timer = DEBUG_OSC_CONNECTION_TIMEOUT_USEC;
-		global_spinlock_lock();
-
 		{
 			//проверка запроса 
 			if (osc_msg->size < sizeof(debug_osc_request_data_t))
@@ -4327,6 +4359,8 @@ void debug_osc_net_callback(net_msg_t* msg, uint64_t channel){
 			osc_data->id = debug_osc_id;
 			osc_data->part = part;
 			osc_data->part_size_bytes = osc_record_size_raw;
+
+			memcpy(osc_data+1, debug_osc_get_osc_data(part), osc_record_size_raw);
 
 			net_send_msg(msg, NET_PRIORITY_LOW, channel);
 		}
