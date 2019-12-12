@@ -4209,7 +4209,7 @@ void debug_osc_add() {
 	default: break;
 	}
 
-
+#if 0
 	//--------------------------
 	static unsigned prev_state = DEBUG_OSC_STATE_WAIT_CONNECTION;
 	if (prev_state != debug_osc_state) {
@@ -4222,6 +4222,7 @@ void debug_osc_add() {
 	}
 	prev_state = debug_osc_state;
     //------------------------
+#endif
 
 
 }
@@ -5512,6 +5513,7 @@ void speed_test() {
 #endif
 
 
+#if 0
 /*********************/
 void test_test() {
 	static bool dir = 0;
@@ -5524,14 +5526,14 @@ void test_test() {
 	else if (val < 100) dir = false;
 
 	MATH_IO_INT_OUT[11] = (int32_t)val+50;
-	MATH_IO_BOOL_OUT[7] = (bool)(val<120.0);
-	MATH_IO_BOOL_OUT[29] = (bool)(val>150.0);
+	MATH_IO_BOOL_OUT[7] = (val<120.0)?true:false;
+	MATH_IO_BOOL_OUT[29] = (val>150.0)?true:false;
 	MATH_IO_REAL_OUT[17] = val;
-	MATH_IO_REAL_OUT[7] = val+33.3f;
-	MATH_IO_REAL_OUT[3] = val+66.6f;
+	MATH_IO_REAL_OUT[7] = val/1000.0f;
+	MATH_IO_REAL_OUT[3] = val-250.0f;
 }
-
 /**********************/
+#endif
 
 
 //основная периодическая функция сурзы
@@ -5582,10 +5584,6 @@ static void MAIN_LOGIC_PERIOD_FUNC() {
 
 	DEBUG_ADD_POINT(36);
 	oscilloscope_add();
-
-	/*********/
-	test_test();
-	/*********/
 
 	debug_osc_add();
 
